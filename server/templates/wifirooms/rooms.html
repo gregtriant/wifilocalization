@@ -1,0 +1,265 @@
+{% extends 'base.html' %}
+
+{% block head %}
+<style>
+    #myCanvas {
+        {#width: 100%;#}
+        width: 600px;
+        {#border:2px solid black;#}
+        margin-bottom: 100px;
+        {#margin-top: 20px;#}
+    }
+    #myCanvas:hover {
+        cursor: crosshair;
+    }
+    #imgForCanvas {
+        display: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+    <div class="row">
+        <div class="col" id="vue-app">
+            <h4>Drag to add new room</h4>
+            <ul v-if="rooms.length>0" class="list-group">
+                <li v-for="(room,index) in rooms" :key="index" class="list-group-item">
+                  [[ index+1 ]]) [[ room.name ]], x:[[ room.x ]], y:[[ room.y ]], w:[[ room.width ]], h:[[ room.height ]]
+                    &nbsp;<button @click="deleteRoom(index)" class="close">&times;</button>
+                </li>
+            </ul>
+            <div v-else>
+                <p>This floor plan has no rooms yet.</p>
+            </div>
+            <br>
+            <button @click="saveAllChanges()" class="btn btn-success">Save Changes</button>
+
+            <!-- new Room Modal -->
+            <div class="modal fade" id="newRoomModal" tabindex="-1" role="dialog" aria-labelledby="newRoomModalLabel1" aria-hidden="true" data-backdrop="static">
+              <div class="modal-dialog" role="document">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title" id="newRoomModalLabel">New Room</h5>
+                    <button @click="closeNewRoomModal()" type="button" class="close" data-dismiss="modal" aria-label="Close">
+                      <span aria-hidden="true">&times;</span>
+                    </button>
+                  </div>
+                  <div class="modal-body">
+                        <div class="form-group">
+                            <label for="roomName">Name *</label>
+                            <input type="text" class="form-control" v-model="newRoom.name" id="roomName" placeholder="Enter name">
+                        </div>
+                        <div v-if="newRoomMessage">
+                            [[ newRoomMessage ]]
+                        </div>
+                  </div>
+                  <div class="modal-footer">
+                    <button @click="closeNewRoomModal()" type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                    <button @click="saveRoom()" class="btn btn-success">Save Room</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+        </div>
+        <div class="col">
+            <!--The image that is used in the canvas-->
+            <img id="imgForCanvas" width=600 alt="floor image"/>
+            <canvas id="myCanvas" width="600" height="581">
+            </canvas>
+            <p>canvas 600x581 px</p>
+        </div>
+    </div> <!--End of row-->
+
+
+
+    <script type="text/javascript">
+        let app = new Vue({
+            el: "#vue-app",
+            delimiters: ['[[', ']]'],
+            data: {
+                myTitle: 'Hello Vue!',
+                rooms: {{ rooms_list|safe }},
+                floor_plan_id: {{ floor_plan_id }},
+                floor_plan_img: '{{ floor_plan_img }}',
+                canvas: '',
+                ctx: '',
+                img: '',
+                startPoint: '',
+                endPoint: '',
+                newRoom: {
+                    x: 0,
+                    y: 0,
+                    width: 0,
+                    height: 0
+                },
+                newRoomMessage: '',
+            },
+            created() {
+                console.log("Rooms: ", this.rooms);
+                console.log("floor_plan_id: ", this.floor_plan_id);
+                console.log("floor_plan_img: ", this.floor_plan_img);
+
+                this.canvas = document.getElementById("myCanvas");
+                this.ctx = this.canvas.getContext("2d");
+                this.img = document.getElementById("imgForCanvas");
+                this.img.src = "/static/images/" + this.floor_plan_img + '/';
+                {#console.log(img.width)#}
+                {#console.log(img.height)#}
+                this.img.addEventListener('load', () => {
+                    this.ctx.drawImage(this.img, 0, 0, 600, 581);
+                    this.drawRooms();
+                })
+
+                this.canvas.addEventListener('mousemove', function(evt) {
+                    let mousePos = app.getMousePos(app.canvas, evt);
+                    if (app.startPoint) { // if the mouse is pressed down we are drawing the new room
+                        app.redrawAll();  // in order to remove the old rectangles
+                        let newRect = app.pointsToRect(mousePos.x, mousePos.y, app.startPoint.x, app.startPoint.y)
+                        app.drawMovingRect(app.canvas, newRect)
+                    }
+                    //write mouse pos at the bottom corner
+                    let message = 'pos: ' + Math.floor(mousePos.x) + ',' + Math.floor(mousePos.y);
+                    app.drawMouseCoordinates(app.canvas, message);
+                }, false);
+
+                this.canvas.addEventListener('mousedown', function(evt) {
+                    let mousePos = app.getMousePos(app.canvas, evt);
+                    app.startPoint = mousePos;
+                })
+                this.canvas.addEventListener('mouseup', function(evt) {
+                    let mousePos = app.getMousePos(app.canvas, evt);
+                    app.endPoint = mousePos;
+                    app.newRoom = app.pointsToRect(app.startPoint.x, app.startPoint.y, app.endPoint.x, app.endPoint.y);
+                    {#console.log(app.newRoom)#}
+                    app.startPoint = '';
+                    app.endPoint = '';
+                    $('#newRoomModal').modal('show');
+                })
+            },
+            methods: {
+                saveAllChanges() {
+                    {#console.log('Current: ', this.rooms)#}
+                    let finalRooms = this.rooms.map(room => {
+                        return {
+                            name: room.name,
+                            x: room.x,
+                            y: room.y,
+                            width: room.width,
+                            height: room.height,
+                            floor_plan_id: this.floor_plan_id
+                        }
+                    })
+                    {#const my_token = '{{ csrf_token }}';#}
+                    axios.defaults.xsrfCookieName = 'csrftoken';
+                    axios.defaults.xsrfHeaderName = 'X-CSRFToken';
+                    axios({
+                        url: '/' + this.floor_plan_id + '/rooms/',
+                        method: 'post',
+                        data: finalRooms
+                    })
+                    .then(res => {
+                        console.log(res.data)
+                    })
+                    .catch(err => {
+                        console.log(err)
+                    })
+                },
+                closeNewRoomModal() {
+                    this.newRoom = {
+                        x: 0,
+                        y: 0,
+                        width: 0,
+                        height: 0
+                    }
+                    $('#newRoomModal').modal('hide');
+                    this.redrawAll();
+                },
+                deleteRoom(id) {
+                    console.log(id);
+                    this.rooms.splice(id, 1);
+                    this.redrawAll();
+                },
+                saveRoom() {
+                    {#console.log(this.newRoom)#}
+                    if (this.newRoom.height == 0 && this.newRoom.width == 0) {
+                        console.log("Invalid new Room");
+                        return;
+                    } else if (!this.newRoom.name) {
+                        console.log("Room has no name")
+                        this.newRoomMessage = 'Please enter a room name.'
+                        return;
+                    } else {
+                        {#console.log(this.newRoom)#}
+                        this.rooms.push(this.newRoom)
+                        this.newRoom = {
+                            x: 0,
+                            y: 0,
+                            width: 0,
+                            height: 0
+                        }
+                        this.newRoomMessage = '';
+                    }
+                    this.closeNewRoomModal();
+                },
+                redrawAll() {
+                    this.ctx.drawImage(app.img, 0, 0, 600, 581);
+                    this.drawRooms();
+                },
+                pointsToRect(x1, y1, x2, y2) {
+                    let x, y, w, h;
+                    if (x1 <= x2) {
+                        x = x1;
+                        w = x2 - x1;
+                    } else if (x2 < x1) {
+                        x = x2;
+                        w = x1 - x2;
+                    }
+
+                    if (y1 <= y2) {
+                        y = y1;
+                        h = y2 - y1;
+                    } else if (y2 < y1) {
+                        y = y2;
+                        h = y1 - y2;
+                    }
+                    return { x:Math.floor(x), y:Math.floor(y), width:Math.floor(w), height:Math.floor(h) }
+                },
+                drawMovingRect(canvas, newRect) {
+                    this.ctx.beginPath();
+                    this.ctx.rect(newRect.x, newRect.y, newRect.width, newRect.height);
+                    this.ctx.stroke();
+                },
+                drawRooms() {
+                    this.rooms.forEach((room,i) => { // room(x,y,width,height)
+                        // draw rect
+                        this.ctx.beginPath();
+                        this.ctx.rect(room.x, room.y, room.width, room.height);
+                        this.ctx.stroke();
+                        // draw index of rect
+                        this.ctx.font = '11pt Calibri';
+                        this.ctx.fillStyle = 'black';
+                        let text = (i+1) + '. ' + room.name;
+                        this.ctx.fillText(text, room.x+5, room.y+15);
+                    })
+                },
+                drawMouseCoordinates(canvas, message) {
+                    let context = canvas.getContext('2d');
+                    context.clearRect(515, 565, canvas.width, canvas.height);
+                    context.font = '11pt Calibri';
+                    context.fillStyle = 'black';
+                    context.fillText(message, 520, 577);
+                },
+                getMousePos(canvas, evt) {
+                    let rect = canvas.getBoundingClientRect();
+                    return {
+                        x: evt.clientX - rect.left,
+                        y: evt.clientY - rect.top
+                    };
+                }
+            }
+        });
+    </script>
+
+{% endblock %}
+
+

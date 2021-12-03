@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+
+{% block head %}
+<style>
+    .card {
+        width: 300px;
+    }
+    .card-body {
+        /*background-color: #d1fcff;*/
+        /*font-weight: bold;*/
+    }
+    .card-body > a > img {
+        width: 100%;
+        margin-top: 10px;
+        transition: transform .2s; /* Animation */
+    }
+    .card-body > a > img:hover {
+        cursor: pointer;
+        transform: scale(1.02);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+    <h1 class="text-center mb-3">Floor Plans</h1>
+    <div class="text-center">
+        {% if floor_plans %}
+            {% for fp in floor_plans %}
+                <div class="card mb-3">
+                    <div class="card-body">
+                        {% load static %}
+                        <b>{{fp.name}}</b> |
+                        {{fp.imagePath}} |
+                        {{fp.pub_date}}
+                        <a href="{% url 'wifirooms:rooms' fp.id %}">
+                            <img src="/static/images/Floor Layout.png" alt="floor image"/>
+                        </a>
+                    </div>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p>No floor plans available</p>
+        {% endif %}
+    </div>
+{% endblock %}
