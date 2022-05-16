@@ -5,25 +5,23 @@
     .card {
         width: 300px;
     }
-    .card-body {
-        /*background-color: #d1fcff;*/
-        /*font-weight: bold;*/
-    }
+
     .card-body > a > img {
         width: 100%;
-        margin-top: 10px;
+        margin: 10px 0px 15px 0px;
         transition: transform .2s; /* Animation */
     }
     .card-body > a > img:hover {
+        transform: scale(1.05);
         cursor: pointer;
-        transform: scale(1.02);
     }
 </style>
 {% endblock %}
 
 {% block content %}
     <h1 class="text-center mb-3">Floor Plans</h1>
-    <div class="text-center">
+    <div class="text-center" id="vue-app">
+{#        [[message]] [[number]]#}
         {% if floor_plans %}
             {% for fp in floor_plans %}
                 <div class="card mb-3">
@@ -32,9 +30,14 @@
                         <b>{{fp.name}}</b> |
                         {{fp.imagePath}} |
                         {{fp.pub_date}}
+                        {# TODO: How to do dynamic image src with django vars #}
                         <a href="{% url 'wifirooms:rooms' fp.id %}">
                             <img src="/static/images/Floor Layout.png" alt="floor image"/>
                         </a>
+{#                        <a href="{% url 'wifirooms:rooms' fp.id %}" class="btn btn-secondary" title="Edit rooms"><i class="fas fa-cogs"></i></a>#}
+{#                        <a href="{% url 'wifirooms:fingerprinting' fp.id %}" class="btn btn-secondary" title="Fingerprinting"><i class="fas fa-map-marked"></i></a>#}
+{#                        <a href="" class="btn btn-secondary" title="Live wifi locations"><i class="fas fa-wifi"></i></a>#}
+{#                        <a href="{% url 'wifirooms:client' fp.id %}" class="btn btn-secondary" title="Client Demo">Client</a>#}
                     </div>
                 </div>
             {% endfor %}
@@ -42,4 +45,20 @@
             <p>No floor plans available</p>
         {% endif %}
     </div>
+
+    <script>
+        let app = new Vue({
+            el: "#vue-app",
+            delimiters: ['[[', ']]'],
+            data: {
+                message: 'Hello from vue',
+                number: 0,
+                ws: ''
+            },
+            created() {
+
+            }
+        })
+
+    </script>
 {% endblock %}

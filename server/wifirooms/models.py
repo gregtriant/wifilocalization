@@ -3,15 +3,22 @@ from django.db import models
 
 # Create your models here.
 class FloorPlan(models.Model):
-    name = models.CharField(max_length=100, default='')
-    imagePath = models.CharField(max_length=100)
-    pub_date = models.DateTimeField('date uploaded')
+    name = models.CharField(max_length=100, default='', blank=False)
+    imagePath = models.CharField(max_length=100, blank=False)
+    pub_date = models.DateTimeField('date uploaded', auto_now_add=True, blank=False)
 
 
 class Room(models.Model):
-    name = models.CharField(max_length=100, default='')
-    FloorPlan = models.ForeignKey(FloorPlan, on_delete=models.CASCADE)
-    x = models.IntegerField(default=0)
-    y = models.IntegerField(default=0)
-    width = models.IntegerField(default=0)
-    height = models.IntegerField(default=0)
+    FloorPlan = models.ForeignKey(FloorPlan, related_name='rooms', on_delete=models.CASCADE)
+    name = models.CharField(max_length=100, default='', blank=False)
+    x = models.FloatField(default=0, blank=False)
+    y = models.FloatField(default=0, blank=False)
+    width = models.FloatField(default=0, blank=False)
+    height = models.FloatField(default=0, blank=False)
+
+
+class SignalPoint(models.Model):
+    FloorPlan = models.ForeignKey(FloorPlan, related_name='signal_points', on_delete=models.CASCADE)
+    x = models.FloatField(default=0, blank=False)
+    y = models.FloatField(default=0, blank=False)
+    networks = models.TextField(blank=False)

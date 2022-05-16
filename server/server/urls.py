@@ -17,6 +17,6 @@ from django.contrib import admin
 from django.urls import include, path
 
 urlpatterns = [
-    path('', include('wifirooms.urls')),
+    path('', include('wifirooms.urls', namespace="wifirooms")),
     path('admin/', admin.site.urls),
 ]

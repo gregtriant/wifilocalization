@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+
+{% block head %}
+<style>
+
+</style>
+
+{% endblock %}
+
+{% block content %}
+    <h3 class="text-center mb-3">Finger printing</h3>
+    <div class="text-center" id="vue-app">
+
+    </div>
+
+    <script>
+        let app = new Vue({
+            el: "#vue-app",
+            delimiters: ['[[', ']]'],
+            data: {
+                message: 'Hello from vue',
+                number: 0,
+                ws: ''
+            },
+            created() {
+                console.log('host: ', window.location.host)
+                this.ws = new WebSocket('ws://127.0.0.1:8000/ws/graph/')
+                this.ws.onopen = function (event) {
+                    app.ws.send('hello from the client');
+                    console.log('connection opened')
+                };
+                this.ws.onmessage = function(event) {
+                    const data = JSON.parse(event.data);
+                    console.log("message from server", data);
+                    let data2 = {
+                      message: "closeConnection",
+                      deviceId: 12345
+                    }
+                    app.ws.send(JSON.stringify(data2))
+                };
+
+                this.ws.onclose = function(e) {
+                    console.log('Socket is closed. Reconnect will be attempted in 1 second.', e.reason);
+                };
+
+                this.ws.onerror = function(err) {
+                  console.error('Socket encountered error: ', err.message, 'Closing socket');
+                };
+            }
+        })
+
+    </script>
+{% endblock %}

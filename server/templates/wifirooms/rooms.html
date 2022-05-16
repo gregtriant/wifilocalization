@@ -1,19 +1,52 @@
 {% extends 'base.html' %}
 
+{% block title %}Edit rooms{% endblock %}
+
 {% block head %}
 <style>
     #myCanvas {
-        {#width: 100%;#}
         width: 600px;
-        {#border:2px solid black;#}
-        margin-bottom: 100px;
-        {#margin-top: 20px;#}
+        margin-bottom: 15px;
     }
-    #myCanvas:hover {
-        cursor: crosshair;
+
+    .cursorLoading:hover {
+        cursor: progress !important;
     }
+    .cursorPointer:hover {
+        cursor: pointer !important;
+    }
+    .cursorCrosshair:hover {
+        cursor: crosshair !important;
+    }
+
     #imgForCanvas {
         display: none;
+    }
+    .mapPinImage {
+        display: none;
+    }
+    .pointInfo {
+        display: inline-block;
+        border: 1px solid rgb(98, 145, 255);
+        border-radius: 5%;
+        padding: 5px;
+        margin-right: 7px;
+        margin-bottom: 7px;
+    }
+    .pointInfo:hover {
+        cursor: pointer;
+        background-color: #ecf7ff;
+    }
+
+    .pointsContainer {
+        {#border: 1px solid lightgrey;#}
+        {#border-radius: 3%;#}
+        {#height: 300px;#}
+        overflow-y: auto;
+        padding: 5px;
+    }
+    .selectedPoint {
+        margin-top: 20px;
     }
 </style>
 {% endblock %}
@@ -21,18 +54,66 @@
 {% block content %}
     <div class="row">
         <div class="col" id="vue-app">
-            <h4>Drag to add new room</h4>
-            <ul v-if="rooms.length>0" class="list-group">
-                <li v-for="(room,index) in rooms" :key="index" class="list-group-item">
-                  [[ index+1 ]]) [[ room.name ]], x:[[ room.x ]], y:[[ room.y ]], w:[[ room.width ]], h:[[ room.height ]]
-                    &nbsp;<button @click="deleteRoom(index)" class="close">&times;</button>
-                </li>
+            <!--TABS-->
+            <ul id="tabs" class="nav nav-tabs mb-3" data-tabs="tabs" role="tablist">
+                <li class="nav-item"><a @click="changeMode('rooms')" href="#rooms" class="nav-link " data-toggle="tab">Rooms</a></li>
+                <li class="nav-item"><a @click="changeMode('pins')" href="#points" class="nav-link active" data-toggle="tab">Points</a></li>
+                <li class="nav-item"><a href="#live" class="nav-link" data-toggle="tab">Live</a></li>
             </ul>
-            <div v-else>
-                <p>This floor plan has no rooms yet.</p>
+            <div id="my-tab-content" class="tab-content">
+                <!-- ROOMS TAB-->
+                <div class="tab-pane " id="rooms">
+                    <h4>Drag to add new room</h4>
+                    <ul v-if="rooms.length>0" class="list-group" style="margin-top: 20px;">
+                        <li v-for="(room,index) in floorPlan.rooms" :key="index" class="list-group-item">
+                          [[ index+1 ]]) [[ room.name ]], x:[[ room.x ]], y:[[ room.y ]], w:[[ room.width ]], h:[[ room.height ]]
+                            &nbsp;<button @click="deleteRoom(index)" class="close">&times;</button>
+                        </li>
+                    </ul>
+                    <div v-else>
+                        <p>This floor plan has no rooms yet.</p>
+                    </div>
+                    <br>
+                    <button @click="togglePins()" class="btn btn-secondary">Toggle Pins</button>
+{#                    <button @click="toggleRooms()" class="btn btn-secondary">Toggle Rooms</button>#}
+                    <button @click="saveAllChanges()" class="btn btn-success">Save Changes</button>
+                </div>
+                <!-- POINTS TAB-->
+                <div class="tab-pane active" id="points">
+                    <h4>Point to add new Pins</h4>
+                    <div class="pointsContainer">
+                        <div v-for="(pin,index) in floorPlan.pins" :key="index" class="pointInfo" @click="changeSelectedPoint(index)" @mouseover="mouseOverPoint(index)" @mouseleave="mouseLeftPoint(index)">
+                            [[ index ]]. x:[[ pin.x ]] y:[[ pin.y ]]
+                            <button @click="deletePin(index, pin.id)" class="close">&times;</button>
+                        </div>
+                        <div v-if="floorPlan.pins && floorPlan.pins.length==0">No points yet.</div>
+                    </div>
+
+                    <div style="margin-top: 20px; margin-bottom: 20px;">
+                        <button @click="togglePins()" class="btn btn-secondary">Toggle Pins</button>
+                        <button @click="toggleRooms()" class="btn btn-secondary">Toggle Rooms</button>
+                        <button @click="sendPinToServer()" class="btn btn-success" :disabled="scanning? true: false" title="Scan for networks and add pin">
+                            <span v-if="scanning"><i class='fa fa-spinner fa-spin '></i> Sending Pin</span>
+                            <span v-else>Send Pin</span>
+                        </button>
+                    </div>
+                    <div v-if="selectedPoint" class="selectedPoint">
+                        [[ selectedPoint.index ]]. x:[[ selectedPoint.point.x ]] y:[[ selectedPoint.point.y ]]
+                        <div v-for="(network, i) in selectedPoint.point.networks" :key="i">
+                            [[ network.BSSID ]] | [[ network.SSID ]] | [[ dbmToQuality(network.level) ]]%
+
+                            <hr>
+                        </div>
+                    </div>
+                </div>
+                <!-- LIVE LOCATIONS TAB-->
+                <div class="tab-pane" id="live">
+                    <h4>Live Locations</h4>
+                    <h5>Connected Devices</h5>
+                    <p></p>
+                </div>
+
             </div>
-            <br>
-            <button @click="saveAllChanges()" class="btn btn-success">Save Changes</button>
 
             <!-- new Room Modal -->
             <div class="modal fade" id="newRoomModal" tabindex="-1" role="dialog" aria-labelledby="newRoomModalLabel1" aria-hidden="true" data-backdrop="static">
@@ -47,7 +128,7 @@
                   <div class="modal-body">
                         <div class="form-group">
                             <label for="roomName">Name *</label>
-                            <input type="text" class="form-control" v-model="newRoom.name" id="roomName" placeholder="Enter name">
+                            <input type="text" class="form-control" v-model="newRoomName" id="roomName" placeholder="Enter name">
                         </div>
                         <div v-if="newRoomMessage">
                             [[ newRoomMessage ]]
@@ -55,97 +136,205 @@
                   </div>
                   <div class="modal-footer">
                     <button @click="closeNewRoomModal()" type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                    <button @click="saveRoom()" class="btn btn-success">Save Room</button>
+                    <button @click="saveNewRoom()" class="btn btn-success">Save Room</button>
                   </div>
                 </div>
               </div>
-            </div>
-        </div>
+            </div><!--end of new room modal-->
+
+        </div> <!--END of vue app col-->
         <div class="col">
             <!--The image that is used in the canvas-->
             <img id="imgForCanvas" width=600 alt="floor image"/>
+            <img id="mapPinImage" class="mapPinImage" src="/static/images/pin.svg" width=10 height=18 alt="pin image">
+            <img id="mapPinImageGreen" class="mapPinImage" src="/static/images/pin_green.svg" width=10 height=18 alt="pin image green">
+            <img id="mapPinImageYellow" class="mapPinImage" src="/static/images/pin_yellow.svg" width=10 height=18 alt="pin image yellow">
             <canvas id="myCanvas" width="600" height="581">
             </canvas>
             <p>canvas 600x581 px</p>
         </div>
-    </div> <!--End of row-->
+    </div> <!--END of row-->
 
+    <!--Reconnection WebSocket-->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/reconnecting-websocket/1.0.0/reconnecting-websocket.min.js" integrity="sha512-B4skI5FiLurS86aioJx9VfozI1wjqrn6aTdJH+YQUmCZum/ZibPBTX55k5d9XM6EsKePDInkLVrN7vPmJxc1qA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-
-    <script type="text/javascript">
+    <script type="module">
+        import { FloorPlan } from "/static/js/myCanvas.mjs";
         let app = new Vue({
             el: "#vue-app",
             delimiters: ['[[', ']]'],
             data: {
-                myTitle: 'Hello Vue!',
-                rooms: {{ rooms_list|safe }},
+                floorPlan: '', // this is My FloorPlant canvas object
+                ws: '',
+                img: '',
+                imgPin: '',
+                imgPinGreen: '',
+                imgPinYellow: '',
+
                 floor_plan_id: {{ floor_plan_id }},
                 floor_plan_img: '{{ floor_plan_img }}',
-                canvas: '',
-                ctx: '',
-                img: '',
-                startPoint: '',
-                endPoint: '',
-                newRoom: {
-                    x: 0,
-                    y: 0,
-                    width: 0,
-                    height: 0
-                },
+
+                rooms: [],
+                pins: [],
+                scanning: false,
+                selectedPoint: '',
+
+                newRoomName: '',
                 newRoomMessage: '',
             },
-            created() {
+            mounted() {
                 console.log("Rooms: ", this.rooms);
                 console.log("floor_plan_id: ", this.floor_plan_id);
                 console.log("floor_plan_img: ", this.floor_plan_img);
 
-                this.canvas = document.getElementById("myCanvas");
-                this.ctx = this.canvas.getContext("2d");
+                this.getFloorPlan();
+
                 this.img = document.getElementById("imgForCanvas");
                 this.img.src = "/static/images/" + this.floor_plan_img + '/';
+
+                this.imgPin = document.getElementById("mapPinImage");
+                this.imgPinGreen = document.getElementById("mapPinImageGreen");
+                this.imgPinYellow = document.getElementById("mapPinImageYellow");
+
                 {#console.log(img.width)#}
                 {#console.log(img.height)#}
+
                 this.img.addEventListener('load', () => {
-                    this.ctx.drawImage(this.img, 0, 0, 600, 581);
-                    this.drawRooms();
+                    // using the FloorPlan class
+                    let canvas = document.getElementById("myCanvas");
+                    this.floorPlan = new FloorPlan(canvas, this.img, this.imgPin, this.imgPinGreen, this.imgPinYellow)
+                    this.floorPlan.setRooms(this.rooms);
+                    this.floorPlan.setPins(this.pins);
+                    this.changeMode('pins');
+                    this.floorPlan.canvas.addEventListener('showNewRoomModal', () => {
+                        $('#newRoomModal').modal('show');
+                    }, false)
+                    this.floorPlan.canvas.addEventListener('closeNewRoomModal', () => {
+                        $('#newRoomModal').modal('hide');
+                    }, false)
                 })
 
-                this.canvas.addEventListener('mousemove', function(evt) {
-                    let mousePos = app.getMousePos(app.canvas, evt);
-                    if (app.startPoint) { // if the mouse is pressed down we are drawing the new room
-                        app.redrawAll();  // in order to remove the old rectangles
-                        let newRect = app.pointsToRect(mousePos.x, mousePos.y, app.startPoint.x, app.startPoint.y)
-                        app.drawMovingRect(app.canvas, newRect)
+
+                // -------------------------------------------------------------------------------  Socket listeners --------------
+                this.ws = new ReconnectingWebSocket('ws://127.0.0.1:8000/ws/graph/')
+                this.ws.onopen = function (event) {
+                    console.log('WS connected!')
+                };
+                this.ws.onmessage = function(event) {
+                    const data = JSON.parse(event.data);
+                    console.log("Message from server", data);
+                    if (data.message == "SCAN_FINISHED") {
+                        let index = app.floorPlan.pins.length-1;
+                        console.log('new pin index', index)
+                        app.floorPlan.pins[index].networks = data.networks;
+                        app.changeSelectedPoint(index);
+                        app.floorPlan.setDoNothing(false);
+                        app.floorPlan.canvas.classList.remove('cursorLoading')
+                        app.floorPlan.canvas.classList.add('cursorPointer')
+                        app.scanning = false;
+
+                        // a new point was added to the database so lets get all again?
                     }
-                    //write mouse pos at the bottom corner
-                    let message = 'pos: ' + Math.floor(mousePos.x) + ',' + Math.floor(mousePos.y);
-                    app.drawMouseCoordinates(app.canvas, message);
-                }, false);
+                };
 
-                this.canvas.addEventListener('mousedown', function(evt) {
-                    let mousePos = app.getMousePos(app.canvas, evt);
-                    app.startPoint = mousePos;
-                })
-                this.canvas.addEventListener('mouseup', function(evt) {
-                    let mousePos = app.getMousePos(app.canvas, evt);
-                    app.endPoint = mousePos;
-                    app.newRoom = app.pointsToRect(app.startPoint.x, app.startPoint.y, app.endPoint.x, app.endPoint.y);
-                    {#console.log(app.newRoom)#}
-                    app.startPoint = '';
-                    app.endPoint = '';
-                    $('#newRoomModal').modal('show');
-                })
+                this.ws.onclose = function(e) {
+                    console.log('Socket is closed. Auto reconnect is on', e.reason);
+                };
+
+                this.ws.onerror = function(err) {
+                  console.error('Socket encountered error: ', err.message, 'Closing socket');
+                };
+                // -------------------------------------------------------------------------------  END Socket listeners --------------
             },
             methods: {
+                dbmToQuality(dBm) {
+                    // where dBm: [-100 to -50]
+                    let quality = 0;
+                    if (dBm <= -100){
+                        quality = 0;
+                    } else if (dBm >= -50) {
+                        quality = 100;
+                    } else {
+                        quality = 2 * (dBm + 100);
+                    }
+
+                    return quality;
+                },
+                getFloorPlan() {
+                    axios.defaults.xsrfCookieName = 'csrftoken';
+                    axios.defaults.xsrfHeaderName = 'X-CSRFToken';
+                    {#if(!axios) console.log("No AXIOS!!")#}
+                    axios.get('/api/floorPlans/' + this.floor_plan_id + '/?date=' + new Date().toISOString())
+                    .then(res => {
+                        console.log(res.data)
+                        this.rooms = res.data.rooms
+                        this.pins = res.data.signal_points
+                        this.pins = this.pins.map(pin => {
+                            return {
+                                floor_plan_id: pin.floor_plan_id,
+                                id: pin.id,
+                                x: pin.x,
+                                y: pin.y,
+                                networks: JSON.parse(pin.networks)
+                            }
+                        })
+
+                    })
+                    .catch(err => {console.log(err)})
+                },
+
+                deletePin(index, pinId) {
+                    console.log(index, pinId);
+                    this.floorPlan.unHighlightPin(index);
+                    this.floorPlan.deletePin(index);
+                    axios.defaults.xsrfCookieName = 'csrftoken';
+                    axios.defaults.xsrfHeaderName = 'X-CSRFToken';
+                    axios.delete("/api/signalPoints/" + pinId + "/")
+                        .then(res => {
+                            console.log(res)
+                        })
+                        .catch(err => {
+                            console.log(err)
+                        })
+                },
+
+                changeSelectedPoint(index) {
+                    if (!this.floorPlan.pins[index]) return;
+                    this.selectedPoint = {
+                        index: index,
+                        point: this.floorPlan.pins[index]
+                    }
+                },
+
+                mouseOverPoint(index) {
+                    {#console.log("mouse on", index)#}
+                    {#console.log(this.floorPlan.pins[index])#}
+                    this.floorPlan.highlightPin(index);
+                    {#app.floorPlan.highlightPin(index);#}
+                },
+
+                mouseLeftPoint(index) {
+                    {#console.log("mouse left", index)#}
+                    this.floorPlan.unHighlightPin(index);
+                },
+
+                deleteRoom(id) {
+                    console.log(id);
+                    this.floorPlan.rooms.splice(id, 1);
+                    this.floorPlan.redrawAll();
+                },
+
                 saveAllChanges() {
-                    {#console.log('Current: ', this.rooms)#}
-                    let finalRooms = this.rooms.map(room => {
+                    let canvasWidth = this.floorPlan.canvas.width;
+                    let canvasHeight = this.floorPlan.canvas.height;
+                    console.log(canvasWidth);
+                    let finalRooms = this.floorPlan.rooms.map(room => {
                         return {
                             name: room.name,
-                            x: room.x,
-                            y: room.y,
-                            width: room.width,
-                            height: room.height,
+                            x: room.x / canvasWidth,
+                            y: room.y / canvasHeight,
+                            width: room.width / canvasWidth,
+                            height: room.height / canvasHeight,
                             floor_plan_id: this.floor_plan_id
                         }
                     })
@@ -164,98 +353,69 @@
                         console.log(err)
                     })
                 },
-                closeNewRoomModal() {
-                    this.newRoom = {
-                        x: 0,
-                        y: 0,
-                        width: 0,
-                        height: 0
-                    }
-                    $('#newRoomModal').modal('hide');
-                    this.redrawAll();
-                },
-                deleteRoom(id) {
-                    console.log(id);
-                    this.rooms.splice(id, 1);
-                    this.redrawAll();
-                },
-                saveRoom() {
-                    {#console.log(this.newRoom)#}
-                    if (this.newRoom.height == 0 && this.newRoom.width == 0) {
-                        console.log("Invalid new Room");
-                        return;
-                    } else if (!this.newRoom.name) {
-                        console.log("Room has no name")
-                        this.newRoomMessage = 'Please enter a room name.'
-                        return;
-                    } else {
-                        {#console.log(this.newRoom)#}
-                        this.rooms.push(this.newRoom)
-                        this.newRoom = {
-                            x: 0,
-                            y: 0,
-                            width: 0,
-                            height: 0
-                        }
-                        this.newRoomMessage = '';
-                    }
-                    this.closeNewRoomModal();
-                },
-                redrawAll() {
-                    this.ctx.drawImage(app.img, 0, 0, 600, 581);
-                    this.drawRooms();
-                },
-                pointsToRect(x1, y1, x2, y2) {
-                    let x, y, w, h;
-                    if (x1 <= x2) {
-                        x = x1;
-                        w = x2 - x1;
-                    } else if (x2 < x1) {
-                        x = x2;
-                        w = x1 - x2;
-                    }
 
-                    if (y1 <= y2) {
-                        y = y1;
-                        h = y2 - y1;
-                    } else if (y2 < y1) {
-                        y = y2;
-                        h = y1 - y2;
+                closeNewRoomModal() {
+                    $('#newRoomModal').modal('hide');
+                    this.newRoomName = '';
+                    this.newRoomMessage = '';
+                },
+
+                saveNewRoom() {
+                    if (this.newRoomName == '') {
+                        this.newRoomMessage = 'Please add a room name.'
+                        return;
+                    } else if (this.floorPlan.newRoom.height == 0 && this.floorPlan.newRoom.width == 0) {
+                        this.newRoomMessage = 'New room is invalid.'
+                        return;
                     }
-                    return { x:Math.floor(x), y:Math.floor(y), width:Math.floor(w), height:Math.floor(h) }
+                    this.floorPlan.newRoom.name = this.newRoomName;
+                    this.floorPlan.addRoom();
+                    this.newRoomName = '';
+                    this.newRoomMessage = '';
                 },
-                drawMovingRect(canvas, newRect) {
-                    this.ctx.beginPath();
-                    this.ctx.rect(newRect.x, newRect.y, newRect.width, newRect.height);
-                    this.ctx.stroke();
+
+                sendPinToServer() {
+                    {#console.log(this.floorPlan.newPin)#}
+                    if (this.floorPlan.addPin() != -1) { // if pin is valid we add it to the pins list
+                        // we send the point to the server
+                        let data = {
+                            message: 'NEW_POINT',
+                            point: this.floorPlan.pins[this.floorPlan.pins.length -1],
+                            floor_plan_id: this.floor_plan_id
+                        }
+                        this.ws.send(JSON.stringify(data))
+                        this.scanning = true;
+                        this.floorPlan.setDoNothing(true);
+                        this.floorPlan.canvas.classList.add('cursorLoading')
+                        this.floorPlan.canvas.classList.remove('cursorCrosshair')
+                        this.floorPlan.canvas.classList.remove('cursorPointer')
+
+                        let btn = $('#sendPinButton')
+                        btn.button('loading')
+                    } else {
+                        console.log("Invalid Pin. Not sending to server...")
+                    }
                 },
-                drawRooms() {
-                    this.rooms.forEach((room,i) => { // room(x,y,width,height)
-                        // draw rect
-                        this.ctx.beginPath();
-                        this.ctx.rect(room.x, room.y, room.width, room.height);
-                        this.ctx.stroke();
-                        // draw index of rect
-                        this.ctx.font = '11pt Calibri';
-                        this.ctx.fillStyle = 'black';
-                        let text = (i+1) + '. ' + room.name;
-                        this.ctx.fillText(text, room.x+5, room.y+15);
-                    })
+
+                changeMode(mode) {
+                    if (mode == 'pins') {
+                        this.floorPlan.canvas.classList.add('cursorPointer')
+                        this.floorPlan.canvas.classList.remove('cursorCrosshair')
+                    } else if (mode == 'rooms') {
+                        this.floorPlan.canvas.classList.add('cursorCrosshair')
+                        this.floorPlan.canvas.classList.remove('cursorPointer')
+                    }
+                    this.floorPlan.setMode(mode);
                 },
-                drawMouseCoordinates(canvas, message) {
-                    let context = canvas.getContext('2d');
-                    context.clearRect(515, 565, canvas.width, canvas.height);
-                    context.font = '11pt Calibri';
-                    context.fillStyle = 'black';
-                    context.fillText(message, 520, 577);
+
+                togglePins() {
+                    this.floorPlan.toggleShowingPins();
                 },
-                getMousePos(canvas, evt) {
-                    let rect = canvas.getBoundingClientRect();
-                    return {
-                        x: evt.clientX - rect.left,
-                        y: evt.clientY - rect.top
-                    };
-                }
+
+                toggleRooms() {
+                    this.floorPlan.toggleShowingRooms();
+                },
+
             }
         });
     </script>

@@ -1,0 +1,130 @@
+{% extends 'base.html' %}
+
+{% block title %}Finger Printing{% endblock %}
+
+{% block head %}
+<style>
+    #myCanvas {
+        {#width: 100%;#}
+        width: 600px;
+        {#border:2px solid black;#}
+        margin-bottom: 100px;
+        {#margin-top: 20px;#}
+    }
+    #myCanvas:hover {
+        {#cursor: crosshair;#}
+    }
+    #imgForCanvas {
+        display: none;
+    }
+</style>
+
+{% endblock %}
+
+{% block content %}
+    <div class="row">
+        <div class="col" id="vue-app">
+            <h4>Connected devices</h4>
+
+            <br>
+            <br>
+            <button @click="toggleRooms()" class="btn btn-secondary">Toggle Rooms</button>
+
+
+
+        </div> <!--end of vue app col-->
+        <div class="col">
+            <div class="mx-auto">
+                <img id="imgForCanvas" width=600 alt="floor image"/>
+                <canvas id="myCanvas" width="600" height="581">
+                </canvas>
+                <p>canvas 600x581 px</p>
+            </div>
+        </div>
+    </div> <!--end of row-->
+
+    <script>
+        let app = new Vue({
+            el: "#vue-app",
+            delimiters: ['[[', ']]'],
+            data: {
+                ws: '',
+                canvas: '',
+                ctx: '',
+                img: '',
+                rooms: {{ rooms_list|safe }},
+                floor_plan_id: {{ floor_plan_id }},
+                floor_plan_img: '{{ floor_plan_img }}',
+                showingRooms: false
+            },
+            created() {
+                console.log("Rooms: ", this.rooms);
+                console.log("floor_plan_id: ", this.floor_plan_id);
+                console.log("floor_plan_img: ", this.floor_plan_img);
+
+                this.canvas = document.getElementById("myCanvas");
+                this.ctx = this.canvas.getContext("2d");
+                this.img = document.getElementById("imgForCanvas");
+                this.img.src = "/static/images/" + this.floor_plan_img + '/';
+                {#console.log(img.width)#}
+                {#console.log(img.height)#}
+                this.img.addEventListener('load', () => {
+                    this.ctx.drawImage(this.img, 0, 0, 600, 581);
+                    {#this.drawRooms();#}
+                })
+
+                this.ws = new WebSocket('ws://127.0.0.1:8000/ws/graph/')
+                this.ws.onopen = function (event) {
+                    app.ws.send('hello from the client');
+                    console.log('connection opened')
+                };
+                this.ws.onmessage = function(event) {
+                    const data = JSON.parse(event.data);
+                    console.log("message from server", data);
+                    let data2 = {
+                      message: "closeConnection",
+                      deviceId: 12345
+                    }
+                    app.ws.send(JSON.stringify(data2))
+                };
+
+                this.ws.onclose = function(e) {
+                    console.log('Socket is closed. Reconnect will be attempted in 1 second.', e.reason);
+                };
+
+                this.ws.onerror = function(err) {
+                  console.error('Socket encountered error: ', err.message, 'Closing socket');
+                };
+            },
+            methods: {
+                toggleRooms() {
+                    if(this.showingRooms) {
+                        this.hideRooms()
+                    } else {
+                        this.drawRooms()
+                    }
+                },
+                drawRooms() {
+                    this.showingRooms = true;
+                    this.rooms.forEach((room,i) => { // room(x,y,width,height)
+                        // draw rect
+                        this.ctx.beginPath();
+                        this.ctx.rect(room.x, room.y, room.width, room.height);
+                        this.ctx.stroke();
+                        // draw index of rect
+                        this.ctx.font = '11pt Calibri';
+                        this.ctx.fillStyle = 'black';
+                        let text = (i+1) + '. ' + room.name;
+                        this.ctx.fillText(text, room.x+5, room.y+15);
+                    })
+                },
+                hideRooms() {
+                    this.showingRooms = false;
+                    // draw image on top of everything
+                    this.ctx.drawImage(this.img, 0, 0, 600, 581);
+                }
+            },
+        })
+
+    </script>
+{% endblock %}

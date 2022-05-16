@@ -1,7 +1,8 @@
 from django.contrib import admin
-from .models import FloorPlan, Room
+from .models import FloorPlan, Room, SignalPoint
 
 
 # Register your models here.
 admin.site.register(FloorPlan)
 admin.site.register(Room)
+admin.site.register(SignalPoint)
