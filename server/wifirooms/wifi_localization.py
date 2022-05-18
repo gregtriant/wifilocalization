@@ -47,17 +47,17 @@ class Localization():
     def calc_dist(self, test_point, signal_point):
         dist = 0
         test_point = sorted(test_point, key=lambda network: network['level']) # reverse=True
-        print("\n\nTest POint:", test_point)
+        # print("\n\nTest POint:", test_point)
         networks_of_signal_point = json.loads(signal_point["networks"])
         # print("\n\n", test_point)
         # print("\n\n", networks_of_signal_point)
         networks_of_signal_point = list(map(lambda point: {"BSSID": point["BSSID"], "level": point["level"]}, networks_of_signal_point))
         networks_of_signal_point = sorted(networks_of_signal_point, key=lambda network: network['level']) # reverse=True
-        print("\nSignal POint:", networks_of_signal_point)
+        # print("\nSignal POint:", networks_of_signal_point)
         # print(networks_of_signal_point)
         # find all the unique bssids in order to calc the distance
         unique_bssids = self.find_unique_bssids(test_point + networks_of_signal_point)
-        print("Found " + str(len(unique_bssids)) + " unique bssids: ",  unique_bssids)
+        # print("Found " + str(len(unique_bssids)) + " unique bssids: ",  unique_bssids)
 
         for bssid in unique_bssids:
             pos1 = -1
@@ -74,9 +74,11 @@ class Localization():
             if pos1 != -1 and pos2 != -1:
                 dist += (test_point[pos1]["level"] - networks_of_signal_point[pos2]["level"]) * (test_point[pos1]["level"] - networks_of_signal_point[pos2]["level"])
             elif pos1 != -1 and pos2 == -1:
-                dist += (test_point[pos1]["level"] - (-100)) * (test_point[pos1]["level"] - (-100))
+                # dist += (test_point[pos1]["level"] - (-100)) * (test_point[pos1]["level"] - (-100))
+                dist += test_point[pos1]["level"] * test_point[pos1]["level"]
             elif pos1 == -1 and pos2 != -1:
-                dist += (networks_of_signal_point[pos2]["level"] - (-100)) * (networks_of_signal_point[pos2]["level"] - (-100))
+                # dist += (networks_of_signal_point[pos2]["level"] - (-100)) * (networks_of_signal_point[pos2]["level"] - (-100))
+                dist += networks_of_signal_point[pos2]["level"] * networks_of_signal_point[pos2]["level"]
 
         return math.sqrt(dist)
 
