@@ -48,6 +48,13 @@
     .selectedPoint {
         margin-top: 20px;
     }
+
+    .currentRoute {
+        background-color: #eeeeee;
+    }
+    .currentPoint {
+        background-color: lightblue;
+    }
 </style>
 {% endblock %}
 
@@ -56,9 +63,10 @@
         <div class="col" id="vue-app">
             <!--TABS-->
             <ul id="tabs" class="nav nav-tabs mb-3" data-tabs="tabs" role="tablist">
-                <li class="nav-item"><a @click="changeMode('rooms')" href="#rooms" class="nav-link " data-toggle="tab">Rooms</a></li>
-                <li class="nav-item"><a @click="changeMode('pins')" href="#points" class="nav-link active" data-toggle="tab">Points</a></li>
-                <li class="nav-item"><a href="#live" class="nav-link" data-toggle="tab">Live</a></li>
+                <li class="nav-item"><a id="TAB_Rooms" @click="changeMode('rooms')" href="#rooms" class="nav-link " data-toggle="tab">Rooms</a></li>
+                <li class="nav-item"><a id="TAB_Pins" @click="changeMode('pins')" href="#points" class="nav-link" data-toggle="tab">Points</a></li>
+                <li class="nav-item"><a id="TAB_Finger" @click="changeMode('fingerprinting')" href="#fingerprinting" class="nav-link active" data-toggle="tab">Fingerprinting</a></li>
+                <li class="nav-item"><a id="TAB_Live" href="#live" class="nav-link" data-toggle="tab">Live</a></li>
             </ul>
             <div id="my-tab-content" class="tab-content">
                 <!-- ROOMS TAB-->
@@ -76,10 +84,10 @@
                     <br>
                     <button @click="togglePins()" class="btn btn-secondary">Toggle Pins</button>
 {#                    <button @click="toggleRooms()" class="btn btn-secondary">Toggle Rooms</button>#}
-                    <button @click="saveAllChanges()" class="btn btn-success">Save Changes</button>
+                    <button @click="saveRooms()" class="btn btn-success">Save Changes</button>
                 </div>
                 <!-- POINTS TAB-->
-                <div class="tab-pane active" id="points">
+                <div class="tab-pane" id="points">
                     <h4>Point to add new Pins</h4>
                     <div class="pointsContainer">
                         <div v-for="(pin,index) in floorPlan.pins" :key="index" class="pointInfo" @click="changeSelectedPoint(index)" @mouseover="mouseOverPoint(index)" @mouseleave="mouseLeftPoint(index)">
@@ -105,6 +113,26 @@
                             <hr>
                         </div>
                     </div>
+                </div>
+                <!-- FINGERPRINTING TAB -->
+                <div class="tab-pane active" id="fingerprinting">
+                    <h4>Live Fingerprinting</h4>
+                    <ul v-if="floorPlan.routes && floorPlan.routes.length>0" class="list-group" style="margin-top: 20px;">
+                        <li v-for="(route,index) in floorPlan.routes" :key="index" :class="index==currentRoute? 'currentRoute': ''" class="list-group-item">
+                            <b>[[index]] .</b>
+                            <span v-for="(point,i) in route" :key="i" :class="i==currentRoutePoint && index==currentRoute? 'currentPoint': ''">[[point]]</span>
+&nbsp;                           <button @click="deleteRoute(index)" class="close">&times;</button>
+                        </li>
+                    </ul>
+                    <div v-else>
+                        <p>This floor plan has no routes yet.</p>
+                    </div>
+                    <br>
+                    <button @click="togglePins()" class="btn btn-secondary">Toggle Pins</button>
+                    <button @click="toggleRooms()" class="btn btn-secondary">Toggle Rooms</button>
+                    <button @click="saveRoutes()" class="btn btn-success">Save Routes</button>
+{#                    <button @click="getConnectedWS()" class="btn btn-success">getConnectedWS</button>#}
+                    <p></p>
                 </div>
                 <!-- LIVE LOCATIONS TAB-->
                 <div class="tab-pane" id="live">
@@ -159,8 +187,14 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/reconnecting-websocket/1.0.0/reconnecting-websocket.min.js" integrity="sha512-B4skI5FiLurS86aioJx9VfozI1wjqrn6aTdJH+YQUmCZum/ZibPBTX55k5d9XM6EsKePDInkLVrN7vPmJxc1qA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
     <script type="module">
+        document.onkeydown = function(evt) {
+            if ("key" in evt && evt.key === "Escape" || evt.key === "Esc") {
+                app.saveRoute();
+            }
+        };
+
         import { FloorPlan } from "/static/js/myCanvas.mjs";
-        let app = new Vue({
+        var app = new Vue({
             el: "#vue-app",
             delimiters: ['[[', ']]'],
             data: {
@@ -176,8 +210,12 @@
 
                 rooms: [],
                 pins: [],
+                routes: [],
                 scanning: false,
                 selectedPoint: '',
+
+                currentRoute: 0,
+                currentRoutePoint: 0,
 
                 newRoomName: '',
                 newRoomMessage: '',
@@ -188,6 +226,7 @@
                 console.log("floor_plan_img: ", this.floor_plan_img);
 
                 this.getFloorPlan();
+                {#this.getRoutes();#}
 
                 this.img = document.getElementById("imgForCanvas");
                 this.img.src = "/static/images/" + this.floor_plan_img + '/';
@@ -205,7 +244,10 @@
                     this.floorPlan = new FloorPlan(canvas, this.img, this.imgPin, this.imgPinGreen, this.imgPinYellow)
                     this.floorPlan.setRooms(this.rooms);
                     this.floorPlan.setPins(this.pins);
-                    this.changeMode('pins');
+                    this.floorPlan.routes = this.routes;
+                    {#this.changeMode('fingerprinting');#}
+                    document.getElementById('TAB_Finger').click();
+
                     this.floorPlan.canvas.addEventListener('showNewRoomModal', () => {
                         $('#newRoomModal').modal('show');
                     }, false)
@@ -223,7 +265,15 @@
                 this.ws.onmessage = function(event) {
                     const data = JSON.parse(event.data);
                     console.log("Message from server", data);
-                    if (data.message == "SCAN_FINISHED") {
+                    if (data.message == "FINGERPRINT_LOCATION") {
+                        {#console.log(data.data)#}
+                        app.floorPlan.currentRoute = data.data.route;
+                        app.floorPlan.currentRoutePoint = data.data.point;
+                        app.currentRoute = data.data.route;
+                        app.currentRoutePoint = data.data.point;
+                        app.floorPlan.redrawAll();
+                    }
+                    else if (data.message == "SCAN_FINISHED") {
                         let index = app.floorPlan.pins.length-1;
                         console.log('new pin index', index)
                         app.floorPlan.pins[index].networks = data.networks;
@@ -247,6 +297,57 @@
                 // -------------------------------------------------------------------------------  END Socket listeners --------------
             },
             methods: {
+                getConnectedWS() {
+                    let data = {
+                        message: "GET_CONNECTED_WS"
+                    }
+                    this.ws.send(JSON.stringify(data))
+                },
+                deleteRoute(index) {
+                    this.floorPlan.deleteRoute(index);
+                },
+                saveRoute() {
+                    {#console.log(app.floorPlan.routePoints)#}
+                    this.floorPlan.routes.push(this.floorPlan.routePoints);
+                    this.floorPlan.routePoints = [];
+                    {#console.log(this.floorPlan.routes);#}
+                },
+
+                saveRoutes() {
+                    let canvasWidth = this.floorPlan.canvas.width;
+                    let canvasHeight = this.floorPlan.canvas.height;
+
+                    let finalRoutes = [];
+                    for (let i=0; i<this.routes.length; i++) {
+                        let route = []
+                        for (let j=0; j<this.routes[i].length; j++) {
+                            let point = {
+                                x: this.routes[i][j].x / canvasWidth,
+                                y: this.routes[i][j].y / canvasHeight
+                            }
+                            route.push(point);
+                        }
+                        finalRoutes.push(route);
+                    }
+
+                    axios.defaults.xsrfCookieName = 'csrftoken';
+                    axios.defaults.xsrfHeaderName = 'X-CSRFToken';
+                    axios({
+                        url: '/' + this.floor_plan_id + '/fingerprinting/',
+                        method: 'post',
+                        data: {
+                            message: "SAVE_ROUTES",
+                            finalRoutes
+                        }
+                    })
+                    .then(res => {
+                        console.log("Saved all new Routes!")
+                    })
+                    .catch(err => {
+                        console.log(err)
+                    })
+                },
+
                 dbmToQuality(dBm) {
                     // where dBm: [-100 to -50]
                     let quality = 0;
@@ -257,16 +358,16 @@
                     } else {
                         quality = 2 * (dBm + 100);
                     }
-
                     return quality;
                 },
+
                 getFloorPlan() {
                     axios.defaults.xsrfCookieName = 'csrftoken';
                     axios.defaults.xsrfHeaderName = 'X-CSRFToken';
                     {#if(!axios) console.log("No AXIOS!!")#}
                     axios.get('/api/floorPlans/' + this.floor_plan_id + '/?date=' + new Date().toISOString())
                     .then(res => {
-                        console.log(res.data)
+                        console.log("Floorplan: ", res.data)
                         this.rooms = res.data.rooms
                         this.pins = res.data.signal_points
                         this.pins = this.pins.map(pin => {
@@ -278,7 +379,14 @@
                                 networks: JSON.parse(pin.networks)
                             }
                         })
+                        this.routes = res.data.routes;
+                        this.routes = this.routes.map(route => {
+                            return JSON.parse(route.points)
+                        })
 
+                        this.floorPlan.setRooms(this.rooms);
+                        this.floorPlan.setPins(this.pins);
+                        this.floorPlan.setRoutes(this.routes);
                     })
                     .catch(err => {console.log(err)})
                 },
@@ -324,7 +432,7 @@
                     this.floorPlan.redrawAll();
                 },
 
-                saveAllChanges() {
+                saveRooms() {
                     let canvasWidth = this.floorPlan.canvas.width;
                     let canvasHeight = this.floorPlan.canvas.height;
                     console.log(canvasWidth);
@@ -402,6 +510,9 @@
                         this.floorPlan.canvas.classList.add('cursorPointer')
                         this.floorPlan.canvas.classList.remove('cursorCrosshair')
                     } else if (mode == 'rooms') {
+                        this.floorPlan.canvas.classList.add('cursorCrosshair')
+                        this.floorPlan.canvas.classList.remove('cursorPointer')
+                    } else if (mode == 'fingerprinting') {
                         this.floorPlan.canvas.classList.add('cursorCrosshair')
                         this.floorPlan.canvas.classList.remove('cursorPointer')
                     }

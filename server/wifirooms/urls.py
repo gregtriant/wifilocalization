@@ -7,12 +7,13 @@ router = routers.DefaultRouter()
 router.register(r'floorPlans', views.FloorPlanViewSet)
 router.register(r'rooms', views.RoomViewSet)
 router.register(r'signalPoints', views.SignalPointViewSet)
-
+router.register(r'routes', views.RouteViewSet)
 
 app_name = 'wifirooms'
 urlpatterns = [
     path('', views.index, name='index'),
     path('<int:floor_plan_id>/rooms/', views.rooms, name="rooms"),
+    path('<int:floor_plan_id>/fingerprinting/', views.fingerprinting, name="fingerprinting"),
 
     path('localize/knn/', views.knn, name="knn"),
 

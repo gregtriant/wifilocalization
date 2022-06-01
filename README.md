@@ -9,8 +9,9 @@ Make sure that python is in your windows Path
 1) pip install django
 2) pip install djangorestframework
 3) python -m pip install -U channels
-4) pip install django-cors-headers
-5) pip install requests
+4) pip install channels-redis
+5) pip install django-cors-headers
+6) pip install requests
 
 
 If virtual env has authorization error type in powershell:

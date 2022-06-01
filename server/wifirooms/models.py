@@ -22,3 +22,8 @@ class SignalPoint(models.Model):
     x = models.FloatField(default=0, blank=False)
     y = models.FloatField(default=0, blank=False)
     networks = models.TextField(blank=False)
+
+
+class Route(models.Model):
+    FloorPlan = models.ForeignKey(FloorPlan, related_name='routes', on_delete=models.CASCADE)
+    points = models.TextField(blank=False)

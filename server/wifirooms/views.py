@@ -1,14 +1,18 @@
 from django.core import serializers
 from django.shortcuts import render, get_object_or_404
-from .models import FloorPlan, Room, SignalPoint
+from .models import FloorPlan, Room, SignalPoint, Route
 from django.http import JsonResponse, HttpResponseServerError, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 import json
 from django.contrib.auth.models import User, Group
 from rest_framework import viewsets, permissions
-from .serializers import FloorPlanSerializer, RoomSerializer, SignalPointSerializer
+from .serializers import FloorPlanSerializer, RoomSerializer, SignalPointSerializer, RouteSerializer
 from .wifi_localization import Localization
 from django.core import serializers
+
+from .wifi_globals import connectedWS
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 
 
 @csrf_exempt
@@ -17,6 +21,7 @@ def index(request):
     context = {'floor_plans': floor_plans}
     return render(request, 'wifirooms/index.html', context)
     # return HttpResponse("Hello, world. You're at the polls index.")
+
 
 @csrf_exempt
 def knn(request):
@@ -50,27 +55,59 @@ def knn(request):
 
 
 @csrf_exempt
+def fingerprinting(request, floor_plan_id):  # api path: <int:floor_plan_id>/fingerprinting/
+    if request.method == 'POST':
+        # add rooms to current floor_plan_id
+        byte_data = request.body                 # this is class byte
+        string_data = byte_data.decode('UTF-8')  # convert to string
+        # print(string_data)
+        data = json.loads(string_data)      # convert to python list
+        # print(data["finalRoutes"])
+        if data["message"] == "SAVE_ROUTES":
+            routes = data["finalRoutes"]
+            # find the specific floor_plan
+            floor_plan = get_object_or_404(FloorPlan, pk=floor_plan_id)
+            # delete all previous rooms for that floor_plan
+            Route.objects.filter(FloorPlan=floor_plan).delete()
+            # add the new rooms
+            for route in routes:
+                newRoute = Route()
+                newRoute.FloorPlan = floor_plan
+                newRoute.points = json.dumps(route)
+                newRoute.save()
+            print("Saved routes for floor_plan: ", floor_plan_id)
+            return HttpResponse('Saved Routes')
+
+        elif data["message"] == "NEW_FINGERPRINT":
+            # here we are in Fingerprinting mode and we are sending the current Route and Current Point
+            data = {
+                "route": data["route"],
+                "point": data["point"],
+                "point_coords": data["pointCoords"]
+            }
+            print(data)
+
+            # send the point to all Connected Browsers
+            channel_layer = get_channel_layer()
+            async_to_sync(channel_layer.group_send)("browsers", {
+                "type": "fingerprint.location",
+                "data": data
+            })
+
+            return HttpResponse('Informing clinets of this new point...')
+
+
+@csrf_exempt
 def rooms(request, floor_plan_id):  # api path: <int:floor_plan_id>/rooms/
     if request.method == 'GET':
         # print(floor_plan_id)
         floor_plan = get_object_or_404(FloorPlan, pk=floor_plan_id)
-        # rooms = get_object_or_404(Room, FloorPlan=floor_plan_id)
-        try:
-            # TODO: Get rooms for a specific floor plan and return them as json
-            rooms_list = Room.objects.values()
-        except (KeyError, Room.DoesNotExist):
-            return render(request, 'wifirooms/rooms.html', {
-                'floor_plan': floor_plan,
-                'error_message': "No rooms for this floor_plan.",
-            })
-        else:
-            # jsonStr = json.dumps(list(rooms_list))
-            # print(jsonStr)
-            return render(request, 'wifirooms/rooms.html', {
-                # 'rooms_list': jsonStr,
-                'floor_plan_id': floor_plan_id,
-                'floor_plan_img': floor_plan.imagePath,
-            })
+        return render(request, 'wifirooms/rooms.html', {
+            # 'rooms_list': jsonStr,
+            'floor_plan_id': floor_plan_id,
+            'floor_plan_img': floor_plan.imagePath,
+        })
+
     elif request.method == 'POST':
         # add rooms to current floor_plan_id
         byte_data = request.body                 # this is class byte
@@ -92,32 +129,28 @@ def rooms(request, floor_plan_id):  # api path: <int:floor_plan_id>/rooms/
             newRoom.height = room['height']
             newRoom.save()
 
-        # TODO: check how to return json in HttpResponse
         return HttpResponse('Saved Rooms')
 
 
 class FloorPlanViewSet(viewsets.ModelViewSet):
-    """
-    API endpoint that allows users to be viewed or edited.
-    """
     queryset = FloorPlan.objects.all()
     serializer_class = FloorPlanSerializer
     # permission_classes = [permissions.IsAuthenticated]
 
 
 class RoomViewSet(viewsets.ModelViewSet):
-    """
-    API endpoint that allows users to be viewed or edited.
-    """
     queryset = Room.objects.all()
     serializer_class = RoomSerializer
     # permission_classes = [permissions.IsAuthenticated]
 
 
 class SignalPointViewSet(viewsets.ModelViewSet):
-    """
-    API endpoint that allows users to be viewed or edited.
-    """
     queryset = SignalPoint.objects.all()
     serializer_class = SignalPointSerializer
+    # permission_classes = [permissions.IsAuthenticated]
+
+
+class RouteViewSet(viewsets.ModelViewSet):
+    queryset = Route.objects.all()
+    serializer_class = RouteSerializer
     # permission_classes = [permissions.IsAuthenticated]

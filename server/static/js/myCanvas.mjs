@@ -32,9 +32,20 @@ export class FloorPlan {
         width: 0,
         height: 0
     }
-
     rooms = [{name: 'hello', x:300, y:200, width: 100, height: 100}];
     showingRooms = true;
+
+    // for fingerprinting Mode
+    fingerprintingMode = false;
+    showingRoutes = true;
+    routes = [];
+    routePoints = [];
+    currentRoute = 0;
+    currentRoutePoint = 0;
+    nextRoutePoint = {
+        x: 0,
+        y: 0
+    }
 
     doNothing = false;
 
@@ -90,9 +101,24 @@ export class FloorPlan {
         if (mode == 'pins') {
             this.addingPinMode = true;
             this.addingRoomMode = false;
+            this.fingerprintingMode = false;
+
+            this.showingRoutes = false;
+            this.showingPins = true;
         } else if (mode == 'rooms') {
             this.addingPinMode = false;
             this.addingRoomMode = true;
+            this.fingerprintingMode = false;
+
+            this.showingRoutes = false;
+            this.showingPins = false;
+        } else if (mode == 'fingerprinting') {
+            this.addingPinMode = false;
+            this.addingRoomMode = false;
+            this.fingerprintingMode = true;
+
+            this.showingRoutes = true;
+            this.showingPins = false;
         }
         this.redrawAll(this.evt)
     }
@@ -104,6 +130,11 @@ export class FloorPlan {
 
     setRooms(rooms) {
         this.rooms = rooms;
+        this.redrawAll(this.evt);
+    }
+
+    setRoutes(routes) {
+        this.routes = routes;
         this.redrawAll(this.evt);
     }
 
@@ -126,6 +157,20 @@ export class FloorPlan {
         } else if (this.addingRoomMode) { // other mode
             let mousePos = this.getMousePos(this.canvas, evt);
             this.startPoint = mousePos;
+
+        } else if (this.fingerprintingMode) {
+            let mousePos = this.getMousePos(this.canvas, evt);
+            if (this.routePoints.length == 0) {
+                this.routePoints.push(mousePos);
+            } else {
+                if (this.nextRoutePoint.x != 0 && this.nextRoutePoint.y != 0) {
+                    let nextPoint = {...this.nextRoutePoint}
+                    this.routePoints.push(nextPoint);
+                    this.nextRoutePoint.x = 0;
+                    this.nextRoutePoint.y = 0;
+                }
+            }
+            // console.log(this.routePoints)
         }
     }
 
@@ -149,25 +194,29 @@ export class FloorPlan {
             this.endPoint = '';
             const event = new Event('showNewRoomModal')
             evt.target.dispatchEvent(event)
+
+        } else if (this.fingerprintingMode) {
+            this.drawAllRoutes();
+            this.nextRoutePoint.x = 0;
+            this.nextRoutePoint.y = 0;
         }
     }
 
     // ---------------------------------------------  Drawing -------------------------------------------------- //
     drawAllPins() {
         this.pins.forEach(pin => {
-            pin.x = pin.x * this.canvas.width <= this.canvas.width? Math.floor(pin.x * this.canvas.width) : pin.x;
-            pin.y = pin.y * this.canvas.height <= this.canvas.height? Math.floor(pin.y * this.canvas.height) : pin.y;
-
+            pin = this.scalePoint(pin, this.canvas.width, this.canvas.height);
             this.ctx.drawImage(this.imgPin, pin.x - this.imgPin.width/2 +1, pin.y - this.imgPin.height, this.imgPin.width, this.imgPin.height);
         })
     }
 
     drawAllRooms() {
         this.rooms.forEach((room,i) => { // room(x,y,width,height)
-            room.x = room.x * this.canvas.width <= this.canvas.width? Math.floor(room.x * this.canvas.width) : room.x;
-            room.y = room.y * this.canvas.height <= this.canvas.height? Math.floor(room.y * this.canvas.height) : room.y;
-            room.width = room.width * this.canvas.width <= this.canvas.width? Math.floor(room.width * this.canvas.width) : room.width;
-            room.height = room.height * this.canvas.height <= this.canvas.height? Math.floor(room.height * this.canvas.height) : room.height;
+            this.scalePoint(room, this.canvas.width, this.canvas.height); // scaling x,y of room
+            let roomDims = { x: room.width, y: room.height }
+            this.scalePoint(roomDims, this.canvas.width, this.canvas.height);
+            room.width = roomDims.x;
+            room.height = roomDims.y;
 
             // draw rect
             this.ctx.beginPath();
@@ -181,9 +230,61 @@ export class FloorPlan {
         })
     }
 
+    drawAllRoutes() {
+        // paint the current route
+        this.drawRoute(this.routePoints)
+
+        // paint the previous routes
+        this.routes.forEach((route, i) => {
+            this.drawRoute(route, i)
+        })
+    }
+
+    drawRoute(route, routeIndex) {
+        let canvasW = this.canvas.width;
+        let canvasH = this.canvas.height;
+        route.forEach((point, i) => {
+            point = this.scalePoint(point, canvasW, canvasH);
+            this.ctx.beginPath();
+            let radius = 2;
+            this.ctx.fillStyle = 'black';
+            if (i == this.currentRoutePoint && routeIndex == this.currentRoute) {
+                radius = 4;
+                this.ctx.fillStyle = 'green';
+            }
+            this.ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.stroke();
+            // draw index of point
+            this.ctx.font = '7pt Calibri';
+            this.ctx.fillStyle = 'black';
+            this.ctx.fillText(i + '.', point.x-2, point.y-5);
+        })
+        for (let i=0; i<route.length -1; i++) {
+            let point1 = this.scalePoint(route[i], canvasW, canvasH);
+            let point2 = this.scalePoint(route[i+1], canvasW, canvasH);
+            this.ctx.beginPath();
+            this.ctx.moveTo(point1.x, point1.y);
+            this.ctx.lineTo(point2.x, point2.y);
+            this.ctx.strokeStyle = '#FFA500';
+            this.ctx.stroke();
+            this.ctx.strokeStyle = '#000000'; // change color back to default
+        }
+    }
+
+    scalePoint(point, canvasW, canvasH) {
+        point.x = point.x * canvasW <= canvasW? Math.floor(point.x * canvasW) : point.x; // if the coordinates are percentages, then multiply them by the width or height of the canvas else, just draw them as they are
+        point.y = point.y * canvasH <= canvasH? Math.floor(point.y * canvasH) : point.y;
+        return point
+    }
+
     redrawAll(evt) {
         // redraw image
         this.ctx.drawImage(this.img, 0, 0, this.canvas.width, this.canvas.height);
+        if (this.showingRoutes) this.drawAllRoutes();
+        if (this.showingRooms) this.drawAllRooms();
+        if (this.showingPins) this.drawAllPins();
+        if (evt) this.drawMouseCoordinates(evt);
 
         if (evt) {
             let mousePos = this.getMousePos(this.canvas, evt)
@@ -200,12 +301,89 @@ export class FloorPlan {
             } else if (this.addingRoomMode) {
                 let newRect = this.pointsToRect(mousePos.x, mousePos.y, this.startPoint.x, this.startPoint.y)
                 this.drawMovingRect(this.canvas, newRect)
+
+            } else if (this.fingerprintingMode) {
+                if (this.doNothing) return;
+
+                let mousePos = this.getMousePos(this.canvas, evt);
+                mousePos.y = this.canvas.height - mousePos.y; // changing Origin to Bottom left
+
+                let prevPoint = {
+                    x:0,
+                    y:0
+                };
+                if (this.routePoints.length > 0) {
+                    prevPoint = {...this.routePoints[this.routePoints.length -1]}
+                    prevPoint.y = this.canvas.height - prevPoint.y; // changing Origin to Bottom left
+                }
+
+                // change Origin of coordinates to Center of Canvas
+                mousePos.x = mousePos.x - Math.floor(this.canvas.width/2);
+                mousePos.y = mousePos.y - Math.floor(this.canvas.height/2);
+                // console.log("mouse: ", mousePos)
+                prevPoint.x = prevPoint.x - Math.floor(this.canvas.width/2);
+                prevPoint.y = prevPoint.y - Math.floor(this.canvas.height/2);
+                // console.log("origin: ", prevPoint);
+
+                // getting a vector with origin the last Point of the Route
+                let vector = {
+                    x: mousePos.x - prevPoint.x,
+                    y: mousePos.y - prevPoint.y
+                }
+                // console.log("vector: ", vector)
+
+                let angle = this.getAngle(vector);
+                // console.log("angle: ", angle)
+
+                // renew the prevPoint with the old Coordinates
+                prevPoint = {...this.routePoints[this.routePoints.length -1]};
+                let pointOffset = 30; // px
+
+                if (angle > 45 && angle <= 135) {
+                    // north
+                    this.nextRoutePoint.x = prevPoint.x
+                    this.nextRoutePoint.y = prevPoint.y - pointOffset;
+                } else if (angle > 135 && angle <= 215) {
+                    // west
+                    this.nextRoutePoint.x = prevPoint.x - pointOffset;
+                    this.nextRoutePoint.y = prevPoint.y;
+                } else if (angle > 215 && angle <= 305) {
+                    // south
+                    this.nextRoutePoint.x = prevPoint.x
+                    this.nextRoutePoint.y = prevPoint.y + pointOffset;
+                } else {
+                    // east
+                    this.nextRoutePoint.x = prevPoint.x + pointOffset;
+                    this.nextRoutePoint.y = prevPoint.y;
+                }
+                this.ctx.beginPath();
+                this.ctx.moveTo(prevPoint.x, prevPoint.y);
+                this.ctx.lineTo(this.nextRoutePoint.x, this.nextRoutePoint.y)
+                this.ctx.stroke();
             }
         }
+    }
 
-        if (this.showingRooms) this.drawAllRooms();
-        if (this.showingPins) this.drawAllPins();
-        if (evt) this.drawMouseCoordinates(evt);
+    getAngle(vector) {
+        let angle = 0;
+        if (vector.x > 0) {
+            angle = Math.atan(vector.y/vector.x);
+        } else if (vector.x < 0 && vector.y >= 0) {
+            angle = Math.atan(vector.y/vector.x) + Math.PI;
+        } else if (vector.x < 0 && vector.y < 0) {
+            angle = Math.atan(vector.y/vector.x) - Math.PI;
+        } else if (vector.x == 0 && vector.y > 0) {
+            angle = Math.PI/2;
+        } else if (vector.x == 0 && vector.y < 0) {
+            angle = - Math.PI/2;
+        } else if (vector.x == 0 && vector.y == 0) {
+            angle = NaN;
+        }
+        if (angle < 0) {
+            angle += 2*Math.PI; // adding this will make it from [-pi, pi] to [0, 2pi]
+        }
+        angle = angle * 180 / Math.PI; // convert to degrees
+        return angle;
     }
 
     drawMouseCoordinates(evt) {
@@ -240,6 +418,7 @@ export class FloorPlan {
             this.ctx.drawImage(this.imgPin, pin.x - this.imgPin.width/2 +1, pin.y - this.imgPin.height, this.imgPin.width, this.imgPin.height); //and then draw the pin image on top
         }
     }
+
     // -----------------------------------------------  Other ---------------------------------------------- //
     getMousePos(canvas, evt) {
         let rect = canvas.getBoundingClientRect();
@@ -294,6 +473,12 @@ export class FloorPlan {
     deletePin(index) {
         // this.unHighlightPin(index);
         this.pins.splice(index, 1);
+        this.redrawAll(this.evt);
+    }
+
+    deleteRoute(index) {
+        // this.unHighlightPin(index);
+        this.routes.splice(index, 1);
         this.redrawAll(this.evt);
     }
 
