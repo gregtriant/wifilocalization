@@ -1,0 +1,5 @@
+655(liv. kitchen) + 306(room) + 13(wall) cm -> 581 px (655 is the west wall of the apartement)
+50 cm -> x px
+
+x = (581*50)/(655+306+13) =  // picture in browser is 600(width)*581(height)
+	= 29050/974 = 29.8 -> 30px

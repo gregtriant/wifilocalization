@@ -40,6 +40,7 @@ export class FloorPlan {
     showingRoutes = true;
     routes = [];
     routePoints = [];
+    pointOffset = 30; // px // distance between route points. In reality, it is 50cm
     currentRoute = 0;
     currentRoutePoint = 0;
     nextRoutePoint = {
@@ -243,6 +244,15 @@ export class FloorPlan {
     drawRoute(route, routeIndex) {
         let canvasW = this.canvas.width;
         let canvasH = this.canvas.height;
+
+        if (routeIndex != undefined) {
+            // console.log("Drawing route:", routeIndex);
+            // draw index of route
+            this.ctx.font = 'bold 11pt Calibri';
+            this.ctx.fillStyle = 'black';
+            let text = "r:" + routeIndex;
+            this.ctx.fillText(text, route[0].x+5, route[0].y+15);
+        }
         route.forEach((point, i) => {
             point = this.scalePoint(point, canvasW, canvasH);
             this.ctx.beginPath();
@@ -260,6 +270,7 @@ export class FloorPlan {
             this.ctx.fillStyle = 'black';
             this.ctx.fillText(i + '.', point.x-2, point.y-5);
         })
+        // draw the lines between points
         for (let i=0; i<route.length -1; i++) {
             let point1 = this.scalePoint(route[i], canvasW, canvasH);
             let point2 = this.scalePoint(route[i+1], canvasW, canvasH);
@@ -310,10 +321,10 @@ export class FloorPlan {
 
                 let prevPoint = {
                     x:0,
-                    y:0
+                    y:0,
                 };
                 if (this.routePoints.length > 0) {
-                    prevPoint = {...this.routePoints[this.routePoints.length -1]}
+                    prevPoint = {...this.routePoints[this.routePoints.length -1]};
                     prevPoint.y = this.canvas.height - prevPoint.y; // changing Origin to Bottom left
                 }
 
@@ -337,25 +348,29 @@ export class FloorPlan {
 
                 // renew the prevPoint with the old Coordinates
                 prevPoint = {...this.routePoints[this.routePoints.length -1]};
-                let pointOffset = 30; // px
 
                 if (angle > 45 && angle <= 135) {
                     // north
                     this.nextRoutePoint.x = prevPoint.x
-                    this.nextRoutePoint.y = prevPoint.y - pointOffset;
+                    this.nextRoutePoint.y = prevPoint.y - this.pointOffset;
+                    if (this.routePoints[this.routePoints.length -1]) this.routePoints[this.routePoints.length -1].direction = "north"; // saving the direction in which we moved
                 } else if (angle > 135 && angle <= 215) {
                     // west
-                    this.nextRoutePoint.x = prevPoint.x - pointOffset;
+                    this.nextRoutePoint.x = prevPoint.x - this.pointOffset;
                     this.nextRoutePoint.y = prevPoint.y;
+                    if (this.routePoints[this.routePoints.length -1]) this.routePoints[this.routePoints.length -1].direction = "west";
                 } else if (angle > 215 && angle <= 305) {
                     // south
                     this.nextRoutePoint.x = prevPoint.x
-                    this.nextRoutePoint.y = prevPoint.y + pointOffset;
+                    this.nextRoutePoint.y = prevPoint.y + this.pointOffset;
+                    if (this.routePoints[this.routePoints.length -1]) this.routePoints[this.routePoints.length -1].direction = "south";
                 } else {
                     // east
-                    this.nextRoutePoint.x = prevPoint.x + pointOffset;
+                    this.nextRoutePoint.x = prevPoint.x + this.pointOffset;
                     this.nextRoutePoint.y = prevPoint.y;
+                    if (this.routePoints[this.routePoints.length -1]) this.routePoints[this.routePoints.length -1].direction = "east";
                 }
+
                 this.ctx.beginPath();
                 this.ctx.moveTo(prevPoint.x, prevPoint.y);
                 this.ctx.lineTo(this.nextRoutePoint.x, this.nextRoutePoint.y)

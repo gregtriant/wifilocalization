@@ -148,7 +148,7 @@
 
 
                 // -------------------------------------------------------------------------------  Socket listeners --------------
-                this.ws = new ReconnectingWebSocket('ws://127.0.0.1:8000/ws/graph/')
+                this.ws = new ReconnectingWebSocket('ws://127.0.0.1:8000/ws/browserWS/')
                 this.ws.onopen = function (event) {
                     console.log('WS connected!')
                 };

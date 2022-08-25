@@ -78,23 +78,44 @@ def fingerprinting(request, floor_plan_id):  # api path: <int:floor_plan_id>/fin
             print("Saved routes for floor_plan: ", floor_plan_id)
             return HttpResponse('Saved Routes')
 
-        elif data["message"] == "NEW_FINGERPRINT":
+        elif data["message"] == "NEW_ROBOT_LOCATION":
+            print("NEW_ROBOT_LOCATION")
             # here we are in Fingerprinting mode and we are sending the current Route and Current Point
             data = {
                 "route": data["route"],
-                "point": data["point"],
-                "point_coords": data["pointCoords"]
+                "point": data["point"]
             }
             print(data)
 
             # send the point to all Connected Browsers
             channel_layer = get_channel_layer()
             async_to_sync(channel_layer.group_send)("browsers", {
-                "type": "fingerprint.location",
+                "type": "robot.location",
                 "data": data
             })
+            response = {
+                "message": "Informing clinets of robot location..."
+            }
+            return HttpResponse(json.dumps(response))
 
-            return HttpResponse('Informing clinets of this new point...')
+        elif data["message"] == "NEW_POINT":
+            print("NEW_POINT")
+            # new point send from the mobile phone on the robot.
+            print(data["route"], data["point"])
+            # print(data["wifis"])
+            print(data["floor_plan_id"])
+            floor_plan = FloorPlan.objects.get(pk=data["floor_plan_id"])
+            routes = serializers.serialize("json", Route.objects.filter(FloorPlan_id=data["floor_plan_id"]))
+            routes = json.loads(routes)
+            selected_route = routes[data["route"]] # we select route from index send (assuming the routes are always retrieved with the same order)
+            route_points = json.loads(selected_route["fields"]["points"])
+            print(route_points[data["point"]])
+            SignalPoint.objects.create(FloorPlan=floor_plan, x=route_points[data["point"]]["x"], y=route_points[data["point"]]["y"], networks=json.dumps(data["wifis"]))
+
+            response = {
+                "message": "New point being added..."
+            }
+            return HttpResponse(json.dumps(response))
 
 
 @csrf_exempt

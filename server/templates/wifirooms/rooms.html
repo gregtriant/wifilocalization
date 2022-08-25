@@ -72,6 +72,12 @@
                 <!-- ROOMS TAB-->
                 <div class="tab-pane " id="rooms">
                     <h4>Drag to add new room</h4>
+                    <div style="margin: 20px 0;">
+                        <button @click="togglePins()" class="btn btn-secondary">Toggle Pins</button>
+    {#                    <button @click="toggleRooms()" class="btn btn-secondary">Toggle Rooms</button>#}
+                        <button @click="saveRooms()" class="btn btn-success">Save Changes</button>
+                    </div>
+
                     <ul v-if="rooms.length>0" class="list-group" style="margin-top: 20px;">
                         <li v-for="(room,index) in floorPlan.rooms" :key="index" class="list-group-item">
                           [[ index+1 ]]) [[ room.name ]], x:[[ room.x ]], y:[[ room.y ]], w:[[ room.width ]], h:[[ room.height ]]
@@ -82,13 +88,16 @@
                         <p>This floor plan has no rooms yet.</p>
                     </div>
                     <br>
-                    <button @click="togglePins()" class="btn btn-secondary">Toggle Pins</button>
-{#                    <button @click="toggleRooms()" class="btn btn-secondary">Toggle Rooms</button>#}
-                    <button @click="saveRooms()" class="btn btn-success">Save Changes</button>
                 </div>
                 <!-- POINTS TAB-->
                 <div class="tab-pane" id="points">
                     <h4>Point to add new Pins</h4>
+
+                    <div style="margin: 20px 0;">
+                        <button @click="togglePins()" class="btn btn-secondary">Toggle Pins</button>
+                        <button @click="toggleRooms()" class="btn btn-secondary">Toggle Rooms</button>
+                    </div>
+
                     <div class="pointsContainer">
                         <div v-for="(pin,index) in floorPlan.pins" :key="index" class="pointInfo" @click="changeSelectedPoint(index)" @mouseover="mouseOverPoint(index)" @mouseleave="mouseLeftPoint(index)">
                             [[ index ]]. x:[[ pin.x ]] y:[[ pin.y ]]
@@ -97,14 +106,6 @@
                         <div v-if="floorPlan.pins && floorPlan.pins.length==0">No points yet.</div>
                     </div>
 
-                    <div style="margin-top: 20px; margin-bottom: 20px;">
-                        <button @click="togglePins()" class="btn btn-secondary">Toggle Pins</button>
-                        <button @click="toggleRooms()" class="btn btn-secondary">Toggle Rooms</button>
-                        <button @click="sendPinToServer()" class="btn btn-success" :disabled="scanning? true: false" title="Scan for networks and add pin">
-                            <span v-if="scanning"><i class='fa fa-spinner fa-spin '></i> Sending Pin</span>
-                            <span v-else>Send Pin</span>
-                        </button>
-                    </div>
                     <div v-if="selectedPoint" class="selectedPoint">
                         [[ selectedPoint.index ]]. x:[[ selectedPoint.point.x ]] y:[[ selectedPoint.point.y ]]
                         <div v-for="(network, i) in selectedPoint.point.networks" :key="i">
@@ -117,10 +118,16 @@
                 <!-- FINGERPRINTING TAB -->
                 <div class="tab-pane active" id="fingerprinting">
                     <h4>Live Fingerprinting</h4>
+                    <div style="margin: 20px 0;">
+                        <button @click="togglePins()" class="btn btn-secondary">Toggle Pins</button>
+                        <button @click="toggleRooms()" class="btn btn-secondary">Toggle Rooms</button>
+                        <button @click="saveRoutes()" class="btn btn-success">Save Routes</button>
+    {#                    <button @click="getConnectedWS()" class="btn btn-success">getConnectedWS</button>#}
+                    </div>
                     <ul v-if="floorPlan.routes && floorPlan.routes.length>0" class="list-group" style="margin-top: 20px;">
                         <li v-for="(route,index) in floorPlan.routes" :key="index" :class="index==currentRoute? 'currentRoute': ''" class="list-group-item">
                             <b>[[index]] .</b>
-                            <span v-for="(point,i) in route" :key="i" :class="i==currentRoutePoint && index==currentRoute? 'currentPoint': ''">[[point]]</span>
+                            <span v-for="(point,i) in route" :key="i" :class="i==currentRoutePoint && index==currentRoute? 'currentPoint': ''"><b>[[i]]:</b> [[point]] </span>
 &nbsp;                           <button @click="deleteRoute(index)" class="close">&times;</button>
                         </li>
                     </ul>
@@ -128,10 +135,7 @@
                         <p>This floor plan has no routes yet.</p>
                     </div>
                     <br>
-                    <button @click="togglePins()" class="btn btn-secondary">Toggle Pins</button>
-                    <button @click="toggleRooms()" class="btn btn-secondary">Toggle Rooms</button>
-                    <button @click="saveRoutes()" class="btn btn-success">Save Routes</button>
-{#                    <button @click="getConnectedWS()" class="btn btn-success">getConnectedWS</button>#}
+
                     <p></p>
                 </div>
                 <!-- LIVE LOCATIONS TAB-->
@@ -258,14 +262,14 @@
 
 
                 // -------------------------------------------------------------------------------  Socket listeners --------------
-                this.ws = new ReconnectingWebSocket('ws://127.0.0.1:8000/ws/graph/')
+                this.ws = new ReconnectingWebSocket('ws://127.0.0.1:8000/ws/browserWS/')
                 this.ws.onopen = function (event) {
                     console.log('WS connected!')
                 };
                 this.ws.onmessage = function(event) {
                     const data = JSON.parse(event.data);
                     console.log("Message from server", data);
-                    if (data.message == "FINGERPRINT_LOCATION") {
+                    if (data.message == "ROBOT_LOCATION") { //robot.location
                         {#console.log(data.data)#}
                         app.floorPlan.currentRoute = data.data.route;
                         app.floorPlan.currentRoutePoint = data.data.point;
@@ -323,7 +327,8 @@
                         for (let j=0; j<this.routes[i].length; j++) {
                             let point = {
                                 x: this.routes[i][j].x / canvasWidth,
-                                y: this.routes[i][j].y / canvasHeight
+                                y: this.routes[i][j].y / canvasHeight,
+                                direction: this.routes[i][j].direction
                             }
                             route.push(point);
                         }
@@ -480,29 +485,6 @@
                     this.floorPlan.addRoom();
                     this.newRoomName = '';
                     this.newRoomMessage = '';
-                },
-
-                sendPinToServer() {
-                    {#console.log(this.floorPlan.newPin)#}
-                    if (this.floorPlan.addPin() != -1) { // if pin is valid we add it to the pins list
-                        // we send the point to the server
-                        let data = {
-                            message: 'NEW_POINT',
-                            point: this.floorPlan.pins[this.floorPlan.pins.length -1],
-                            floor_plan_id: this.floor_plan_id
-                        }
-                        this.ws.send(JSON.stringify(data))
-                        this.scanning = true;
-                        this.floorPlan.setDoNothing(true);
-                        this.floorPlan.canvas.classList.add('cursorLoading')
-                        this.floorPlan.canvas.classList.remove('cursorCrosshair')
-                        this.floorPlan.canvas.classList.remove('cursorPointer')
-
-                        let btn = $('#sendPinButton')
-                        btn.button('loading')
-                    } else {
-                        console.log("Invalid Pin. Not sending to server...")
-                    }
                 },
 
                 changeMode(mode) {

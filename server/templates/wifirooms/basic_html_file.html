@@ -24,7 +24,7 @@
             },
             created() {
                 console.log('host: ', window.location.host)
-                this.ws = new WebSocket('ws://127.0.0.1:8000/ws/graph/')
+                this.ws = new WebSocket('ws://127.0.0.1:8000/ws/browserWS/')
                 this.ws.onopen = function (event) {
                     app.ws.send('hello from the client');
                     console.log('connection opened')

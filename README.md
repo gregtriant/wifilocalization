@@ -42,3 +42,10 @@ REST_FRAMEWORK = {
 python manage.py makemigrations
 python manage.py showmigrations
 python manage.py migrate
+
+// Django Database
+
+-- filter by date
+![filter_date.png](filter_date.png)
+Entry.objects.filter(pub_date__date=datetime.date(2005, 1, 1))
+Entry.objects.filter(pub_date__date__gt=datetime.date(2005, 1, 1))

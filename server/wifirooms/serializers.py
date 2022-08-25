@@ -8,7 +8,7 @@ class SignalPointSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = SignalPoint
-        fields = ['id', 'x', 'y', 'networks', 'floor_plan_id']
+        fields = ['id', 'x', 'y', 'networks', 'floor_plan_id', 'created_at']
 
 
 class RoomSerializer(serializers.HyperlinkedModelSerializer):
@@ -16,7 +16,7 @@ class RoomSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = Room
-        fields = ['id', 'name', 'x', 'y', 'width', 'height', 'floor_plan_id']
+        fields = ['id', 'name', 'x', 'y', 'width', 'height', 'floor_plan_id', 'created_at']
 
 
 class RouteSerializer(serializers.HyperlinkedModelSerializer):
@@ -24,7 +24,7 @@ class RouteSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = Route
-        fields = ['id', 'points', 'floor_plan_id']
+        fields = ['id', 'points', 'floor_plan_id', 'created_at']
 
 
 class FloorPlanSerializer(serializers.HyperlinkedModelSerializer):
@@ -34,7 +34,7 @@ class FloorPlanSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = FloorPlan
-        fields = ['id', 'name', 'imagePath', 'pub_date', 'rooms', 'signal_points', 'routes']
+        fields = ['id', 'created_at', 'name', 'imagePath', 'pub_date', 'rooms', 'signal_points', 'routes']
 
 
 
