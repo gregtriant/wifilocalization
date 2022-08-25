@@ -81,6 +81,7 @@ def fingerprinting(request, floor_plan_id):  # api path: <int:floor_plan_id>/fin
         elif data["message"] == "NEW_ROBOT_LOCATION":
             print("NEW_ROBOT_LOCATION")
             # here we are in Fingerprinting mode and we are sending the current Route and Current Point
+
             data = {
                 "route": data["route"],
                 "point": data["point"]
