@@ -370,7 +370,7 @@
                     axios.defaults.xsrfCookieName = 'csrftoken';
                     axios.defaults.xsrfHeaderName = 'X-CSRFToken';
                     {#if(!axios) console.log("No AXIOS!!")#}
-                    axios.get('/api/floorPlans/' + this.floor_plan_id + '/?date=' + new Date().toISOString())
+                    axios.get('/api/floorPlans/' + this.floor_plan_id) //+ '/?date=' + new Date().toISOString()
                     .then(res => {
                         console.log("Floorplan: ", res.data)
                         this.rooms = res.data.rooms

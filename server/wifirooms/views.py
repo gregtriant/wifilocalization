@@ -157,22 +157,50 @@ def rooms(request, floor_plan_id):  # api path: <int:floor_plan_id>/rooms/
 class FloorPlanViewSet(viewsets.ModelViewSet):
     queryset = FloorPlan.objects.all()
     serializer_class = FloorPlanSerializer
-    # permission_classes = [permissions.IsAuthenticated]
 
 
 class RoomViewSet(viewsets.ModelViewSet):
-    queryset = Room.objects.all()
     serializer_class = RoomSerializer
-    # permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        floor_plan_id = self.request.GET.get('floor_plan_id')
+        # print("HELLOOOOO", floor_plan_id)
+        if floor_plan_id is None:
+            return Room.objects.all()
+
+        floor_plan = get_object_or_404(FloorPlan, pk=floor_plan_id)
+        return Room.objects.filter(FloorPlan=floor_plan)
 
 
 class SignalPointViewSet(viewsets.ModelViewSet):
-    queryset = SignalPoint.objects.all()
     serializer_class = SignalPointSerializer
-    # permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        floor_plan_id = self.request.GET.get('floor_plan_id')
+        date = self.request.GET.get('date')
+
+        if date is not None and floor_plan_id is not None:
+            year = int(date.split('-')[0])
+            month = int(date.split('-')[1])
+            day = int(date.split('-')[2])
+            floor_plan = get_object_or_404(FloorPlan, pk=floor_plan_id)
+            return SignalPoint.objects.filter(FloorPlan=floor_plan, created_at__year=year,
+                                              created_at__month=month, created_at__day=day)
+        if floor_plan_id is None:
+            return SignalPoint.objects.all()
+        else:
+            floor_plan = get_object_or_404(FloorPlan, pk=floor_plan_id)
+            return SignalPoint.objects.filter(FloorPlan=floor_plan)
 
 
 class RouteViewSet(viewsets.ModelViewSet):
-    queryset = Route.objects.all()
     serializer_class = RouteSerializer
-    # permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        floor_plan_id = self.request.GET.get('floor_plan_id')
+        # print("HELLOOOOO", floor_plan_id)
+        if floor_plan_id is None:
+            return Route.objects.all()
+
+        floor_plan = get_object_or_404(FloorPlan, pk=floor_plan_id)
+        return Route.objects.filter(FloorPlan=floor_plan)

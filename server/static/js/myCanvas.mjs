@@ -205,10 +205,17 @@ export class FloorPlan {
 
     // ---------------------------------------------  Drawing -------------------------------------------------- //
     drawAllPins() {
-        this.pins.forEach(pin => {
-            pin = this.scalePoint(pin, this.canvas.width, this.canvas.height);
-            this.ctx.drawImage(this.imgPin, pin.x - this.imgPin.width/2 +1, pin.y - this.imgPin.height, this.imgPin.width, this.imgPin.height);
-        })
+        let pins = this.pins;
+        for (let i=0; i<pins.length; i++) {
+            pins[i] = this.scalePoint(pins[i], this.canvas.width, this.canvas.height);
+            if (i==0 || pins[i].x != pins[i-1].x || pins[i].y != pins[i-1].y) { // if x and y are different from the previous point
+                this.ctx.drawImage(this.imgPin, pins[i].x - this.imgPin.width/2 +1, pins[i].y - this.imgPin.height, this.imgPin.width, this.imgPin.height);
+            }
+        }
+        // this.pins.forEach(pin => {
+        //     pin = this.scalePoint(pin, this.canvas.width, this.canvas.height);
+        //     this.ctx.drawImage(this.imgPin, pin.x - this.imgPin.width/2 +1, pin.y - this.imgPin.height, this.imgPin.width, this.imgPin.height);
+        // })
     }
 
     drawAllRooms() {
