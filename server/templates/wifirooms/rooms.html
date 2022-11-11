@@ -65,7 +65,7 @@
             <ul id="tabs" class="nav nav-tabs mb-3" data-tabs="tabs" role="tablist">
                 <li class="nav-item"><a id="TAB_Rooms" @click="changeMode('rooms')" href="#rooms" class="nav-link " data-toggle="tab">Rooms</a></li>
                 <li class="nav-item"><a id="TAB_Pins" @click="changeMode('pins')" href="#points" class="nav-link" data-toggle="tab">Points</a></li>
-                <li class="nav-item"><a id="TAB_Finger" @click="changeMode('fingerprinting')" href="#fingerprinting" class="nav-link active" data-toggle="tab">Fingerprinting</a></li>
+                <li class="nav-item"><a id="TAB_Finger" @click="changeMode('fingerprinting')" href="#routes" class="nav-link active" data-toggle="tab">Routes</a></li>
                 <li class="nav-item"><a id="TAB_Live" href="#live" class="nav-link" data-toggle="tab">Live</a></li>
             </ul>
             <div id="my-tab-content" class="tab-content">
@@ -80,7 +80,7 @@
 
                     <ul v-if="rooms.length>0" class="list-group" style="margin-top: 20px;">
                         <li v-for="(room,index) in floorPlan.rooms" :key="index" class="list-group-item">
-                          [[ index+1 ]]) [[ room.name ]], x:[[ room.x ]], y:[[ room.y ]], w:[[ room.width ]], h:[[ room.height ]]
+                          [[ index ]]) [[ room.name ]], x:[[ room.x ]], y:[[ room.y ]], w:[[ room.width ]], h:[[ room.height ]]
                             &nbsp;<button @click="deleteRoom(index)" class="close">&times;</button>
                         </li>
                     </ul>
@@ -99,9 +99,9 @@
                     </div>
 
                     <div class="pointsContainer">
-                        <div v-for="(pin,index) in floorPlan.pins" :key="index" class="pointInfo" @click="changeSelectedPoint(index)" @mouseover="mouseOverPoint(index)" @mouseleave="mouseLeftPoint(index)">
-                            [[ index ]]. x:[[ pin.x ]] y:[[ pin.y ]]
-                            <button @click="deletePin(index, pin.id)" class="close">&times;</button>
+                        <div v-for="(point, index) in uniquePoints" :key="index" class="pointInfo" @click="changeSelectedPoint(point, index)" @mouseover="mouseOverPoint(point)" @mouseleave="mouseLeftPoint(point)">
+                            [[ index ]]. x:[[ point.x ]] y:[[ point.y ]]
+{#                            <button @click="deletePin(index, pin.id)" class="close">&times;</button>#}
                         </div>
                         <div v-if="floorPlan.pins && floorPlan.pins.length==0">No points yet.</div>
                     </div>
@@ -115,9 +115,9 @@
                         </div>
                     </div>
                 </div>
-                <!-- FINGERPRINTING TAB -->
-                <div class="tab-pane active" id="fingerprinting">
-                    <h4>Live Fingerprinting</h4>
+                <!-- Routes TAB -->
+                <div class="tab-pane active" id="routes">
+                    <h4>Routes</h4>
                     <div style="margin: 20px 0;">
                         <button @click="togglePins()" class="btn btn-secondary">Toggle Pins</button>
                         <button @click="toggleRooms()" class="btn btn-secondary">Toggle Rooms</button>
@@ -218,6 +218,8 @@
                 scanning: false,
                 selectedPoint: '',
 
+                uniquePoints: [], // to show in the points tab (a sing point can have many scans, so we don't show all of them)
+
                 currentRoute: 0,
                 currentRoutePoint: 0,
 
@@ -278,14 +280,14 @@
                         app.floorPlan.redrawAll();
                     }
                     else if (data.message == "SCAN_FINISHED") {
-                        let index = app.floorPlan.pins.length-1;
-                        console.log('new pin index', index)
-                        app.floorPlan.pins[index].networks = data.networks;
-                        app.changeSelectedPoint(index);
-                        app.floorPlan.setDoNothing(false);
-                        app.floorPlan.canvas.classList.remove('cursorLoading')
-                        app.floorPlan.canvas.classList.add('cursorPointer')
-                        app.scanning = false;
+                        {#let index = app.floorPlan.pins.length-1;#}
+                        {#console.log('new pin index', index)#}
+                        {#app.floorPlan.pins[index].networks = data.networks;#}
+                        {#app.changeSelectedPoint(index);#}
+                        {#app.floorPlan.setDoNothing(false);#}
+                        {#app.floorPlan.canvas.classList.remove('cursorLoading')#}
+                        {#app.floorPlan.canvas.classList.add('cursorPointer')#}
+                        {#app.scanning = false;#}
 
                         // a new point was added to the database so lets get all again?
                     }
@@ -389,9 +391,25 @@
                             return JSON.parse(route.points)
                         })
 
+                        // TODO combine pins of the same point to a single point and then show the points in the Points tab and not the pins.
+                        let uniquePoints = []
+                        for (let i=0; i<this.pins.length; i++) {
+                            let pin = this.pins[i];
+                            let foundPin = false;
+                            for (let j=0; j<uniquePoints.length; j++) {
+                                if (uniquePoints[j].x == pin.x && uniquePoints[j].y == pin.y) {
+                                    foundPin = true;
+                                }
+                            }
+                            if (!foundPin) {
+                                uniquePoints.push(pin);
+                            }
+                        }
+                        this.uniquePoints = uniquePoints;
                         this.floorPlan.setRooms(this.rooms);
-                        this.floorPlan.setPins(this.pins);
+                        this.floorPlan.setPins(this.uniquePoints);
                         this.floorPlan.setRoutes(this.routes);
+                        {#console.log(uniquePoints);#}
                     })
                     .catch(err => {console.log(err)})
                 },
@@ -411,24 +429,24 @@
                         })
                 },
 
-                changeSelectedPoint(index) {
-                    if (!this.floorPlan.pins[index]) return;
+                changeSelectedPoint(point, index) {
                     this.selectedPoint = {
                         index: index,
-                        point: this.floorPlan.pins[index]
-                    }
+                        point: point
+                    };
+                    this.floorPlan.highlightPin(point);
                 },
 
-                mouseOverPoint(index) {
+                mouseOverPoint(point) {
                     {#console.log("mouse on", index)#}
                     {#console.log(this.floorPlan.pins[index])#}
-                    this.floorPlan.highlightPin(index);
+                    {#this.floorPlan.highlightPin(point);#}
                     {#app.floorPlan.highlightPin(index);#}
                 },
 
-                mouseLeftPoint(index) {
+                mouseLeftPoint(point) {
                     {#console.log("mouse left", index)#}
-                    this.floorPlan.unHighlightPin(index);
+                    {#this.floorPlan.unHighlightPin(point);#}
                 },
 
                 deleteRoom(id) {

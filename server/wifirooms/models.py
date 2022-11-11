@@ -8,6 +8,7 @@ class FloorPlan(models.Model):
     pub_date = models.DateTimeField('date uploaded', auto_now_add=True, blank=False)
     created_at = models.DateTimeField(default=now, editable=True)
 
+
 class Room(models.Model):
     FloorPlan = models.ForeignKey(FloorPlan, related_name='rooms', on_delete=models.CASCADE)
     name = models.CharField(max_length=100, default='', blank=False)

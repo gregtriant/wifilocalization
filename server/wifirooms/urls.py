@@ -16,6 +16,7 @@ urlpatterns = [
     path('<int:floor_plan_id>/fingerprinting/', views.fingerprinting, name="fingerprinting"),
 
     path('localize/knn/', views.knn, name="knn"),
+    path('localize/room_knn/', views.room_knn, name="room_knn"),
 
     # paths for APIs
     path('api/', include(router.urls)),

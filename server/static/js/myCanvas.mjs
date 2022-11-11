@@ -20,6 +20,8 @@ export class FloorPlan {
     };
     pins = [{x: 40, y:60}, {x:100, y:200}];
     showingPins = true;
+    highlightedPin = null;
+
 
     // for room mode
     addingRoomMode = false;
@@ -233,7 +235,7 @@ export class FloorPlan {
             // draw index of rect
             this.ctx.font = '11pt Calibri';
             this.ctx.fillStyle = 'black';
-            let text = (i+1) + '. ' + room.name;
+            let text = (i) + '. ' + room.name;
             this.ctx.fillText(text, room.x+5, room.y+15);
         })
     }
@@ -423,19 +425,18 @@ export class FloorPlan {
         this.ctx.stroke();
     }
 
-    highlightPin(index) {
-        // console.log(this.pins[index])
-        let pin = this.pins[index];
-        if (!pin) return;
-        if (pin.x) { // if we have a new pin
+    highlightPin(pin) {
+        if (this.highlightedPin != null) {
+            this.unHighlightPin(this.highlightedPin);
+        }
+
+        if (pin.x) { // if we have a new pin to highlight
             this.ctx.drawImage(this.imgPinYellow, pin.x - this.imgPinYellow.width/2 +1, pin.y - this.imgPinYellow.height, this.imgPinYellow.width, this.imgPinYellow.height); //and then draw the pin image on top
         }
+        this.highlightedPin = pin;
     }
 
-    unHighlightPin(index) {
-        // console.log(this.pins[index])
-        let pin = this.pins[index];
-        if (!pin) return;
+    unHighlightPin(pin) {
         if (pin.x) { // if we have a new pin
             this.ctx.drawImage(this.imgPin, pin.x - this.imgPin.width/2 +1, pin.y - this.imgPin.height, this.imgPin.width, this.imgPin.height); //and then draw the pin image on top
         }

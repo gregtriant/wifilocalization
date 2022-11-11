@@ -1,9 +1,13 @@
 import json
 import requests
 import math
+import pandas as pd
+from .wifi_radiomap import SignalPoint, RadioMap
+
+from sklearn.neighbors import KNeighborsClassifier
 
 
-class Localization():
+class Localization:
     test_point = [{'BSSID': '78:96:82:3a:9d:c8', 'level': -42},
                   {'BSSID': '28:ff:3e:03:76:dc', 'level': -62},
                   {'BSSID': '62:ff:3e:03:76:dd', 'level': -65},
@@ -16,6 +20,29 @@ class Localization():
                   {'BSSID': '62:96:82:2f:ef:4f', 'level': -89},
                   {'BSSID': '34:58:40:e6:60:c0', 'level': -92},
                   {'BSSID': '50:81:40:15:41:e8', 'level': -95}]
+
+    def __init__(self, radio_map):
+        self.radio_map = radio_map
+
+    def find_room_knn(self, scanned_networks):
+        x_train = self.radio_map.df_dataset.iloc[:, 3:]
+        y_train = self.radio_map.df_dataset.iloc[:, 0]
+        # print(self.radio_map.df_dataset.head())
+
+        # make the classifiers
+        knn3 = KNeighborsClassifier(n_neighbors=3)
+        knn3.fit(x_train, y_train)
+
+        networks = list(map(lambda net: (net["BSSID"], net["level"]), scanned_networks))
+        networks = sorted(networks, key=lambda x: -x[1])
+
+        networks = self.organize_rssi_of_new_point(networks, self.radio_map.unique_bssids_of_floor_plan)
+        # networks_bssids = [x[0] for x in networks]
+
+        df_test = self.convert_networks_to_df(networks, self.radio_map.unique_bssids_of_floor_plan)
+        y_pred_knn3 = knn3.predict(df_test)
+        print("Room prediction:", y_pred_knn3)
+        return y_pred_knn3
 
     def knn(self, signal_points, test_point=None, k=4):
         print(' --> Localization with knn!')
@@ -103,6 +130,48 @@ class Localization():
 
         return quality
 
-#
-# Loc = Localization()
-# Loc.knn()
+    def organize_rssi_of_new_point(self, scanned_networks, unique_bssids_of_floor_plan):
+        # print(len(networks), networks)
+        # remove unknown bssids from this scan
+        indexes_to_remove = []
+        for network_index, network in enumerate(scanned_networks):
+            bssid = network[0]
+            if bssid not in unique_bssids_of_floor_plan:
+                # then we cannot use this network
+                indexes_to_remove.append(network_index)
+
+        new_networks = []
+        for index, net in enumerate(scanned_networks):
+            if index not in indexes_to_remove:
+                new_networks.append(net)
+
+        scanned_networks = new_networks.copy()
+        del new_networks
+
+        # print(len(networks), networks)
+        # add the lowest value to as the value of the rest of the networks that were not scanned this time
+        networks_bssids = [x[0] for x in scanned_networks]
+        for unique_bssid in unique_bssids_of_floor_plan:
+            if unique_bssid not in networks_bssids:
+                scanned_networks.append((unique_bssid, SignalPoint.RSSI_LOWEST))
+        # print(len(networks), networks)
+        assert len(scanned_networks) == len(unique_bssids_of_floor_plan), "They should be of equal length to continue!"
+
+        return scanned_networks
+
+    def convert_networks_to_df(self, networks, unique_bssids_of_floor_plan):
+        df_columns = unique_bssids_of_floor_plan.copy()
+        df_test = pd.DataFrame(columns=df_columns)
+        # print(df)
+        new_df_row = {}
+        for network in networks:
+            # print(network)
+            bssid = network[0]
+            val = network[1]
+            d = {
+                bssid: [val]
+            }
+            new_df_row.update(d)
+        # print(new_df_row)
+        df_test = pd.concat([df_test, pd.DataFrame.from_dict(new_df_row)], ignore_index=True, axis=0)
+        return df_test

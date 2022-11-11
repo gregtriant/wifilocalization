@@ -8,6 +8,7 @@ from django.contrib.auth.models import User, Group
 from rest_framework import viewsets, permissions
 from .serializers import FloorPlanSerializer, RoomSerializer, SignalPointSerializer, RouteSerializer
 from .wifi_localization import Localization
+from .wifi_radiomap import RadioMap
 from django.core import serializers
 
 from .wifi_globals import connectedWS
@@ -24,21 +25,32 @@ def index(request):
 
 
 @csrf_exempt
-def knn(request):
-    # get all points from the database
+def room_knn(request):
+    # make Radio map of floor plan
     data = serializers.serialize("json", SignalPoint.objects.all())
     data = json.loads(data)
-    signal_points = []
+    points = []
     for point in data:
-        signal_points.append(point['fields'])
-    knns = []
+        points.append(point['fields'])
 
+    data = serializers.serialize("json", Room.objects.all())
+    data = json.loads(data)
+    rooms = []
+    for room in data:
+        rooms.append(room['fields'])
+
+    rm = RadioMap(points, rooms)
+    rm.make_radio_map()
+    print("Made new Radio map!!!")
+
+    room_pred = ''
+    localizer = Localization(rm)
     if request.method == 'GET': # this is for testing purposes
         test_point = [{'BSSID': '78:96:82:3a:9d:c8', 'level': -42}, {'BSSID': '28:ff:3e:03:76:dc', 'level': -62}, {'BSSID': '62:ff:3e:03:76:dd', 'level': -65}, {'BSSID': 'f4:23:9c:20:9a:06', 'level': -75},
                       {'BSSID': '0c:b9:12:03:c4:20', 'level': -82}, {'BSSID': '08:26:97:e4:4f:51', 'level': -83}, {'BSSID': '50:78:b3:80:c4:bd', 'level': -86}, {'BSSID': '5a:d4:58:f2:8e:64', 'level': -87},
                       {'BSSID': '78:96:82:2f:ef:4e', 'level': -88}, {'BSSID': '62:96:82:2f:ef:4f', 'level': -89}, {'BSSID': '34:58:40:e6:60:c0', 'level': -92}, {'BSSID': '50:81:40:15:41:e8', 'level': -95}]
-        Localizer = Localization()
-        knns = Localizer.knn(signal_points, test_point, 4)
+        room = localizer.find_room_knn(test_point)
+        room_pred = room[0]
 
     elif request.method == 'POST':
         byte_data = request.body  # this is class byte
@@ -47,8 +59,49 @@ def knn(request):
         # print(list_data)
 
         test_point = list_data['networks']
-        Localizer = Localization()
-        knns = Localizer.knn(signal_points, test_point, 4)
+        room = localizer.find_room_knn(test_point)
+        room_pred = room[0]
+    data = {
+        "room_pred": room_pred
+    }
+    return HttpResponse(json.dumps(data))
+
+@csrf_exempt
+def knn(request):
+    # get all points from the database
+    # make Radio map of floor plan
+    data = serializers.serialize("json", SignalPoint.objects.all())
+    data = json.loads(data)
+    signal_points = []
+    for point in data:
+        signal_points.append(point['fields'])
+
+    data = serializers.serialize("json", Room.objects.all())
+    data = json.loads(data)
+    rooms = []
+    for room in data:
+        rooms.append(room['fields'])
+
+    rm = RadioMap(signal_points, rooms)
+    rm.make_radio_map()
+    print("Made new Radio map!!!")
+
+    localizer = Localization(rm)
+    knns = []
+    if request.method == 'GET': # this is for testing purposes
+        test_point = [{'BSSID': '78:96:82:3a:9d:c8', 'level': -42}, {'BSSID': '28:ff:3e:03:76:dc', 'level': -62}, {'BSSID': '62:ff:3e:03:76:dd', 'level': -65}, {'BSSID': 'f4:23:9c:20:9a:06', 'level': -75},
+                      {'BSSID': '0c:b9:12:03:c4:20', 'level': -82}, {'BSSID': '08:26:97:e4:4f:51', 'level': -83}, {'BSSID': '50:78:b3:80:c4:bd', 'level': -86}, {'BSSID': '5a:d4:58:f2:8e:64', 'level': -87},
+                      {'BSSID': '78:96:82:2f:ef:4e', 'level': -88}, {'BSSID': '62:96:82:2f:ef:4f', 'level': -89}, {'BSSID': '34:58:40:e6:60:c0', 'level': -92}, {'BSSID': '50:81:40:15:41:e8', 'level': -95}]
+        knns = localizer.knn(signal_points, test_point, 4)
+
+    elif request.method == 'POST':
+        byte_data = request.body  # this is class byte
+        string_data = byte_data.decode('UTF-8')  # convert to string
+        list_data = json.loads(string_data)  # convert to python list
+        print(list_data)
+
+        test_point = list_data['networks']
+        knns = localizer.knn(signal_points, test_point, 4)
 
     print("\nTesting found knns: ", knns)
     return HttpResponse(json.dumps(knns))

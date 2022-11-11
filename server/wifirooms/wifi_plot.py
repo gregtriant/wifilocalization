@@ -23,7 +23,9 @@ print('plotting wifi points')
 signal_points = []
 
 r = requests.get('http://127.0.0.1:8000/api/signalPoints?floor_plan_id=1')
+
 points = json.loads(r.text)
+
 # for each scan we see the coordinates and group them to single points. One point has a number of scans
 for index, point in enumerate(points):
     # print(index, point['networks'])
@@ -44,7 +46,7 @@ for index, point in enumerate(points):
 print('Found ', len(signal_points), 'different points')
 
 # chose a point
-signal_point = signal_points[66]
+signal_point = signal_points[0]
 
 print(signal_point.x, signal_point.y)
 
@@ -58,7 +60,7 @@ for index, scan in enumerate(signal_point.scans):
         if (network['BSSID'], network['SSID']) not in unique_bssids:
             unique_bssids.append((network['BSSID'], network['SSID']))
 
-print(unique_bssids)
+print(unique_bssids, "\n")
 
 # for each unique bssid get the ssi level and plot it against time (40 scans)
 chosen_ssids = []
@@ -98,7 +100,7 @@ for unique_net in unique_bssids:
             # plot all the points
             # plt.scatter(*zip(*signal_strengths), s=10)
             plt.plot(*zip(*signal_strengths), marker='.', markersize=7, linewidth=1)
-            plt.xlim(-1, 41)
+            plt.xlim(-1, 87)
             plt.ylim(-100, -35)
             plt_title = "Levels for: " + bssid + " " + ssid
             plt.title(plt_title)
@@ -109,7 +111,7 @@ for unique_net in unique_bssids:
             # collective Figure
             plt.figure(100)
             plt.plot(*zip(*signal_strengths), marker='.', markersize=7, linewidth=1)
-            plt.xlim(-1, 41)
+            plt.xlim(-1, 87)
             plt.ylim(-100, -35)
             plt.xlabel("Scan Number")
             plt.ylabel("dBm level")
