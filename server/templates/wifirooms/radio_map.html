@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+
+{% block head %}
+<style>
+.bssid-box {
+    padding: 5px;
+    margin: 10px;
+    border: 1px solid black;
+    width: 170px;
+    text-align: center;
+}
+
+.bssid-box:hover {
+    cursor: pointer;
+}
+</style>
+
+{% endblock %}
+
+{% block content %}
+    <div class="container" id="vue-app">
+        <h3 class="">Radio Map [[ floor_plan_id ]]</h3>
+        <hr>
+        <h5>Unique bssids</h5>
+        <div class="row">
+            <div class="col" v-for="(bssid,index) in bssids" :key="index">
+                <div class="bssid-box" @click="make3DView(bssid)"><b>[[index]].</b> [[ bssid ]]</div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        let app = new Vue({
+            el: "#vue-app",
+            delimiters: ['[[', ']]'],
+            data: {
+                message: 'Hello from vue',
+                floor_plan_id: {{ floor_plan_id }},
+                bssids: []
+            },
+            created() {
+                console.log('host: ', window.location.host)
+                console.log("Floor plan id:", this.floor_plan_id)
+                this.getBssids()
+            },
+            methods: {
+                getBssids() {
+                    axios.defaults.xsrfCookieName = 'csrftoken';
+                    axios.defaults.xsrfHeaderName = 'X-CSRFToken';
+                    axios.get("/"+this.floor_plan_id+"/bssids/")
+                    .then(res => {
+                        {#console.log(res)#}
+                        this.bssids = res.data
+                    })
+                    .catch(err => {
+                        console.log(err)
+                    })
+                },
+                make3DView(bssid) {
+                    console.log("Showing 3d signals for:", bssid);
+                    let data = {
+                        bssid: bssid
+                    }
+                    axios.post("/"+this.floor_plan_id+"/bssids/", data)
+                        .then(res => {
+                            console.log(res)
+                        })
+                        .catch(err => {
+                            console.log(err)
+                        })
+                }
+            }
+        })
+
+    </script>
+{% endblock %}

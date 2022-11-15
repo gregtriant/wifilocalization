@@ -50,6 +50,14 @@ export class FloorPlan {
         y: 0
     }
 
+    // for Radio Map Mode
+    radioMapMode = false;
+    radioMap;
+
+    // for testing Mode
+    testingMode = false;
+
+
     doNothing = false;
 
     constructor(canvas, img, imgPin, imgPinGreen, imgPinYellow) {
@@ -105,6 +113,7 @@ export class FloorPlan {
             this.addingPinMode = true;
             this.addingRoomMode = false;
             this.fingerprintingMode = false;
+            this.radioMapMode = false;
 
             this.showingRoutes = false;
             this.showingPins = true;
@@ -112,6 +121,7 @@ export class FloorPlan {
             this.addingPinMode = false;
             this.addingRoomMode = true;
             this.fingerprintingMode = false;
+            this.radioMapMode = false;
 
             this.showingRoutes = false;
             this.showingPins = false;
@@ -119,8 +129,26 @@ export class FloorPlan {
             this.addingPinMode = false;
             this.addingRoomMode = false;
             this.fingerprintingMode = true;
+            this.radioMapMode = false;
 
             this.showingRoutes = true;
+            this.showingPins = false;
+        } else if (mode == 'radio_map') {
+            this.addingPinMode = false;
+            this.addingRoomMode = false;
+            this.fingerprintingMode = false;
+            this.radioMapMode = true;
+
+            this.showingRoutes = false;
+            this.showingPins = false;
+        } else if (mode == 'testing') {
+            this.addingPinMode = false;
+            this.addingRoomMode = false;
+            this.fingerprintingMode = false;
+            this.radioMapMode = false;
+            this.testingMode = true;
+
+            this.showingRoutes = false;
             this.showingPins = false;
         }
         this.redrawAll(this.evt)
@@ -206,6 +234,94 @@ export class FloorPlan {
     }
 
     // ---------------------------------------------  Drawing -------------------------------------------------- //
+    changeSelectedTestPoint(test_point, knns, rooms) {
+
+        console.log("Testing Point...:", test_point)
+        let realPoint = {
+            x: test_point.x,
+            y: test_point.y
+        }
+        realPoint = this.scalePoint(realPoint, this.canvas.width, this.canvas.height);
+        this.drawPoint(realPoint, 'black', 5)
+
+        // draw rooms
+        rooms.forEach((room,i) => {
+            console.log(i, room)
+
+        })
+        let colors = ['red', 'green', 'blue', 'yellow']
+        // draw knns
+        knns.forEach((knn_points, i) => {
+            // console.log(i, ':')
+            let color = colors[i]
+            let p = {
+                x: knn_points[0].x,
+                y: knn_points[0].y
+            }
+            p = this.scalePoint(p, this.canvas.width, this.canvas.height)
+            this.drawPoint(p, color, 2)
+            // knn_points.forEach((knn, j) => {
+            //     console.log(i,j,knn.x,knn.y)
+            //     let p = {
+            //         x: knn.x,
+            //         y: knn.y
+            //     }
+            //     p = this.scalePoint(p, this.canvas.width, this.canvas.height)
+            //     this.drawPoint(p, color)
+            // })
+        })
+    }
+
+    drawPoint(point, color, radius) {
+        // draw point center
+        this.ctx.beginPath();
+        this.ctx.fillStyle = color;
+        this.ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.stroke();
+    }
+
+    changeSelectedBSSID(bssid) {
+        if (!bssid) return;
+        this.selectedBSSID = bssid;
+        // console.log("selected", bssid);
+        // console.log("Radio map:", this.radioMap);
+
+        this.drawRadioMapForBSSID();
+    }
+
+    drawRadioMapForBSSID() {
+        if (!this.radioMap || !this.selectedBSSID) return;
+        let numberOfPoints = Object.keys(this.radioMap['pointX']).length;
+
+        for (let i=0; i<numberOfPoints; i++) {
+            let rssi_value = this.radioMap[this.selectedBSSID][i];
+            let level = this.dbmToQuality(rssi_value) / 100; // from 0 to 1
+            let x = this.radioMap['pointX'][i];
+            let y = this.radioMap['pointY'][i];
+            let point = this.scalePoint({x,y}, this.canvas.width, this.canvas.height)
+
+
+            // draw the rect
+            let width = 25;
+            this.ctx.beginPath();
+
+            let red = Math.floor(255 * (1 - level));
+            let green = Math.floor(255 * level);
+            let blue = 0;
+
+            if (level == 0) {
+                red=0;
+                red=0;
+
+            }
+            this.ctx.fillStyle = `rgb(${red},${green},${blue})`;
+            this.ctx.rect(point.x-width/2, point.y - width/2, width, width);
+            this.ctx.fill();
+            this.ctx.stroke();
+        }
+    }
+
     drawAllPins() {
         let pins = this.pins;
         for (let i=0; i<pins.length; i++) {
@@ -299,11 +415,13 @@ export class FloorPlan {
     }
 
     redrawAll(evt) {
+        // console.log("redrawong all!!")
         // redraw image
         this.ctx.drawImage(this.img, 0, 0, this.canvas.width, this.canvas.height);
         if (this.showingRoutes) this.drawAllRoutes();
         if (this.showingRooms) this.drawAllRooms();
         if (this.showingPins) this.drawAllPins();
+        if (this.radioMapMode) this.drawRadioMapForBSSID();
         if (evt) this.drawMouseCoordinates(evt);
 
         if (evt) {
@@ -322,7 +440,12 @@ export class FloorPlan {
                 let newRect = this.pointsToRect(mousePos.x, mousePos.y, this.startPoint.x, this.startPoint.y)
                 this.drawMovingRect(this.canvas, newRect)
 
+            } else if (this.radioMapMode) {
+                if (!this.selectedBSSID) return;
+                this.drawRadioMapForBSSID()
+
             } else if (this.fingerprintingMode) {
+
                 if (this.doNothing) return;
 
                 let mousePos = this.getMousePos(this.canvas, evt);
@@ -525,6 +648,18 @@ export class FloorPlan {
         return { x:Math.floor(x), y:Math.floor(y), width:Math.floor(w), height:Math.floor(h) }
     }
 
+    dbmToQuality(dBm) {
+        // where dBm: [-100 to -50]
+        let quality = 0;
+        if (dBm <= -100){
+            quality = 0;
+        } else if (dBm >= -50) {
+            quality = 100;
+        } else {
+            quality = 2 * (dBm + 100);
+        }
+        return quality;
+    }
 }
 
 

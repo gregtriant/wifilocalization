@@ -10,10 +10,33 @@ from .serializers import FloorPlanSerializer, RoomSerializer, SignalPointSeriali
 from .wifi_localization import Localization
 from .wifi_radiomap import RadioMap
 from django.core import serializers
-
+import time
 from .wifi_globals import connectedWS
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+print("Views.py... Making Radio map for FloorPlan: 1")
+start = time.time()
+data = serializers.serialize("json", SignalPoint.objects.all())
+data = json.loads(data)
+points = []
+for point in data:
+    points.append(point['fields'])
+
+data = serializers.serialize("json", Room.objects.all())
+data = json.loads(data)
+rooms = []
+for room in data:
+    rooms.append(room['fields'])
+
+rm = RadioMap(points, rooms)
+rm.make_radio_map()
+end = time.time()
+print("Made new Radio map!!! -- time:", end-start, "\n")
 
 
 @csrf_exempt
@@ -25,23 +48,68 @@ def index(request):
 
 
 @csrf_exempt
+def radio_map(request, floor_plan_id):
+    # return render(request, 'wifirooms/radio_map.html', {
+    #     'floor_plan_id': floor_plan_id,
+    # })
+    return HttpResponse(rm.df_dataset.to_json())
+
+
+@csrf_exempt
+def bssids(request, floor_plan_id):
+    # if request.method == 'GET':
+    return HttpResponse(json.dumps(rm.unique_bssids_of_floor_plan))
+
+
+@csrf_exempt
+def test_points(request, floor_plan_id):
+    test_pts = []
+    for sp in rm.signal_points:
+        scans = []
+        x = sp.x
+        y = sp.y
+        r = sp.room
+        for i, scan in enumerate(sp.scans):
+            if i>79:
+                scans.append(scan)
+        p = {
+            'x': x,
+            'y': y,
+            'room': r,
+            'scans': scans
+        }
+        test_pts.append(p)
+    return HttpResponse(json.dumps(test_pts))
+
+
+@csrf_exempt
+def point_scans(request, floor_plan_id):
+
+    point_scans = []
+    for sp in rm.signal_points:
+        point = {
+            'x': sp.x,
+            'y': sp.y,
+            'room': sp.room,
+            'scans': len(sp.scans)
+        }
+        point_scans.append(point)
+    return HttpResponse(json.dumps(point_scans))
+
+
+def dbm_to_percent(dbm):
+    quality = 0
+    if dbm <= -100:
+        quality = 0
+    elif dbm >= -50:
+        quality = 100
+    else:
+        quality = 2 * (dbm + 100)
+    return quality
+
+
+@csrf_exempt
 def room_knn(request):
-    # make Radio map of floor plan
-    data = serializers.serialize("json", SignalPoint.objects.all())
-    data = json.loads(data)
-    points = []
-    for point in data:
-        points.append(point['fields'])
-
-    data = serializers.serialize("json", Room.objects.all())
-    data = json.loads(data)
-    rooms = []
-    for room in data:
-        rooms.append(room['fields'])
-
-    rm = RadioMap(points, rooms)
-    rm.make_radio_map()
-    print("Made new Radio map!!!")
 
     room_pred = ''
     localizer = Localization(rm)
@@ -66,6 +134,7 @@ def room_knn(request):
     }
     return HttpResponse(json.dumps(data))
 
+
 @csrf_exempt
 def knn(request):
     # get all points from the database
@@ -75,16 +144,6 @@ def knn(request):
     signal_points = []
     for point in data:
         signal_points.append(point['fields'])
-
-    data = serializers.serialize("json", Room.objects.all())
-    data = json.loads(data)
-    rooms = []
-    for room in data:
-        rooms.append(room['fields'])
-
-    rm = RadioMap(signal_points, rooms)
-    rm.make_radio_map()
-    print("Made new Radio map!!!")
 
     localizer = Localization(rm)
     knns = []

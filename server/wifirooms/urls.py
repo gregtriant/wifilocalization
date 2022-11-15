@@ -15,6 +15,11 @@ urlpatterns = [
     path('<int:floor_plan_id>/rooms/', views.rooms, name="rooms"),
     path('<int:floor_plan_id>/fingerprinting/', views.fingerprinting, name="fingerprinting"),
 
+    path('<int:floor_plan_id>/radio_map/', views.radio_map, name="radio_map"),  # returns the radio map data frame in json
+    path('<int:floor_plan_id>/bssids/', views.bssids, name="bssids"),  # returns the unique bssids of the floor_plan's radio map
+    path('<int:floor_plan_id>/point_scans/', views.point_scans, name="point_scans"),  # returns the test points with their scans for the floor_plan's radio map
+    path('<int:floor_plan_id>/test_points/', views.test_points, name="test_points"),  # returns the test points with their scans for the floor_plan's radio map
+
     path('localize/knn/', views.knn, name="knn"),
     path('localize/room_knn/', views.room_knn, name="room_knn"),
 

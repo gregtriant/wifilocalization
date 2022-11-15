@@ -51,8 +51,14 @@ class RadioMap:
             # print(index, point['networks'])
             found_it = False
             for i in range(0, len(self.signal_points)):
-                if math.isclose(self.signal_points[i].x, point['x']) and \
-                        math.isclose(self.signal_points[i].y, point['y']):  # found same point
+                width = 600 # example width and height just to upscale the points
+                height = 581
+                point1_x = math.floor(self.signal_points[i].x * width)
+                point2_x = math.floor(point['x'] * width)
+
+                point1_y = math.floor(self.signal_points[i].y * height)
+                point2_y = math.floor(point['y'] * height)
+                if point1_x == point2_x and point1_y == point2_y:  # found same point
                     # add networks
                     self.signal_points[i].add_scan(json.loads(point['networks']))
                     found_it = True
@@ -66,6 +72,8 @@ class RadioMap:
 
         del points_from_database
         print('Found ', len(self.signal_points), 'different points')
+
+
 
     def find_room_of_point(self, sp):
         for room in self.rooms:
@@ -100,8 +108,7 @@ class RadioMap:
                         if network['BSSID'] == bssid:  # check if this bssid was found in that scan
                             signal_strengths.append((scan_index, network['level']))
 
-                freq = len(signal_strengths) / len(
-                    signal_point.scans)  # number of times this bssid appeared during the 40 scans
+                freq = len(signal_strengths) / len(signal_point.scans)  # number of times this bssid appeared during the 40 scans
 
                 if freq >= 0.7:  # excluding bssids that are not so often
                     dbm_vals = [x[1] for x in signal_strengths]  # get second value of tuples
@@ -173,6 +180,67 @@ class RadioMap:
         self.df_dataset = df
 
 
+
+#
+# # Fixing random state for reproducibility
+# np.random.seed(19680801)
+#
+# width = 600
+# height = 581
+#
+#
+#
+# fig = plt.figure()
+# ax = fig.add_subplot(projection='3d')
+# x, y = np.random.rand(2, 100) * 4
+# # print(x)
+# hist, xedges, yedges = np.histogram2d(x, y, bins=4, range=[[0, 4], [0, 4]])
+#
+# # Construct arrays for the anchor positions of the 16 bars.
+# xpos, ypos = np.meshgrid(xedges[:-1] + 0.25, yedges[:-1] + 0.25, indexing="ij")
+# xpos = xpos.ravel()
+# ypos = ypos.ravel()
+# zpos = 0
+#
+# # Construct arrays with the dimensions for the 16 bars.
+# dx = dy = 0.5 * np.ones_like(zpos)
+# dz = hist.ravel()
+#
+# ax.bar3d(xpos, ypos, zpos, dx, dy, dz, zsort='average')
+#
+# plt.show()
+#
+#
+# print("Getting points of Floorplan...")
+# res = requests.get('http://127.0.0.1:8000/api/signalPoints?floor_plan_id=1')
+# points = json.loads(res.text)
+# print("Done!")
+# print("Getting rooms of Floorplan...")
+# res = requests.get('http://127.0.0.1:8000/api/rooms?floor_plan_id=1')
+# rooms = json.loads(res.text)
+# print("Done!")
+# print(rooms)
+#
+# rm = RadioMap(points, rooms)
+# rm.make_radio_map()
+#
+# print(rm.df_dataset.head())
+#
+# print()
+# ax1 = fig.add_subplot(projection='3d')
+#
+# x3 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+# y3 = [5, 6, 7, 8, 2, 5, 6, 3, 7, 2]
+# z3 = np.zeros(10)
+#
+# dx = np.ones(10)
+# dy = np.ones(10)
+# dz = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+#
+#
+# ax1.bar3d(y3, x3, z3, dx, dy, dz, color="red")
+# # ax1.axis('off')
+# plt.show()
 
 # def find_room_of_point(point, rooms):
 #     for room in rooms:

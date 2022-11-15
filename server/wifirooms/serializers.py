@@ -29,12 +29,13 @@ class RouteSerializer(serializers.HyperlinkedModelSerializer):
 
 class FloorPlanSerializer(serializers.HyperlinkedModelSerializer):
     rooms = RoomSerializer(many=True, read_only=True)
-    signal_points = SignalPointSerializer(many=True, read_only=True)
+    # signal_points = SignalPointSerializer(many=True, read_only=True)
     routes = RouteSerializer(many=True, read_only=True)
 
     class Meta:
         model = FloorPlan
-        fields = ['id', 'created_at', 'name', 'imagePath', 'pub_date', 'rooms', 'signal_points', 'routes']
+        fields = ['id', 'created_at', 'name', 'imagePath', 'pub_date', 'rooms', 'routes']
+        # fields = ['id', 'created_at', 'name', 'imagePath', 'pub_date', 'rooms', 'signal_points', 'routes']
 
 
 

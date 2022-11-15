@@ -33,15 +33,21 @@
         margin-right: 7px;
         margin-bottom: 7px;
     }
+
+    .wrong-point-info {
+        background-color: #ff8f87;
+    }
+
+    .point-info-selected {
+        background-color: #83a2fc !important;
+    }
+
     .pointInfo:hover {
         cursor: pointer;
         background-color: #ecf7ff;
     }
 
     .pointsContainer {
-        {#border: 1px solid lightgrey;#}
-        {#border-radius: 3%;#}
-        {#height: 300px;#}
         overflow-y: auto;
         padding: 5px;
     }
@@ -65,7 +71,9 @@
             <ul id="tabs" class="nav nav-tabs mb-3" data-tabs="tabs" role="tablist">
                 <li class="nav-item"><a id="TAB_Rooms" @click="changeMode('rooms')" href="#rooms" class="nav-link " data-toggle="tab">Rooms</a></li>
                 <li class="nav-item"><a id="TAB_Pins" @click="changeMode('pins')" href="#points" class="nav-link" data-toggle="tab">Points</a></li>
-                <li class="nav-item"><a id="TAB_Finger" @click="changeMode('fingerprinting')" href="#routes" class="nav-link active" data-toggle="tab">Routes</a></li>
+                <li class="nav-item"><a id="TAB_Finger" @click="changeMode('fingerprinting')" href="#routes" class="nav-link" data-toggle="tab">Routes</a></li>
+                <li class="nav-item"><a id="TAB_Radio" @click="changeMode('radio_map')" href="#radio" class="nav-link active" data-toggle="tab">Radio Map</a></li>
+                <li class="nav-item"><a id="TAB_Testing" @click="changeMode('testing')" href="#testing" class="nav-link" data-toggle="tab">Testing</a></li>
                 <li class="nav-item"><a id="TAB_Live" href="#live" class="nav-link" data-toggle="tab">Live</a></li>
             </ul>
             <div id="my-tab-content" class="tab-content">
@@ -99,24 +107,23 @@
                     </div>
 
                     <div class="pointsContainer">
-                        <div v-for="(point, index) in uniquePoints" :key="index" class="pointInfo" @click="changeSelectedPoint(point, index)" @mouseover="mouseOverPoint(point)" @mouseleave="mouseLeftPoint(point)">
-                            [[ index ]]. x:[[ point.x ]] y:[[ point.y ]]
+                        <div v-for="(point, index) in pins" :key="index" class="pointInfo" @click="changeSelectedPoint(point, index)" :class="[point.scans < 85? 'wrong-point-info' : '', index==selectedPoint.index? 'point-info-selected': '']" >
+                            [[ index ]]. x:[[ point.x ]] y:[[ point.y ]] | [[ point.scans ]]
 {#                            <button @click="deletePin(index, pin.id)" class="close">&times;</button>#}
                         </div>
                         <div v-if="floorPlan.pins && floorPlan.pins.length==0">No points yet.</div>
                     </div>
-
-                    <div v-if="selectedPoint" class="selectedPoint">
-                        [[ selectedPoint.index ]]. x:[[ selectedPoint.point.x ]] y:[[ selectedPoint.point.y ]]
-                        <div v-for="(network, i) in selectedPoint.point.networks" :key="i">
-                            [[ network.BSSID ]] | [[ network.SSID ]] | [[ dbmToQuality(network.level) ]]%
-
-                            <hr>
-                        </div>
-                    </div>
+{#                    <div v-if="selectedPoint" class="selectedPoint">#}
+{#                        [[ selectedPoint.index ]]. x:[[ selectedPoint.point.x ]] y:[[ selectedPoint.point.y ]]#}
+{#                        <div v-for="(network, i) in selectedPoint.point.networks" :key="i">#}
+{#                            [[ network.BSSID ]] | [[ network.SSID ]] | [[ dbmToQuality(network.level) ]]%#}
+{##}
+{#                            <hr>#}
+{#                        </div>#}
+{#                    </div>#}
                 </div>
                 <!-- Routes TAB -->
-                <div class="tab-pane active" id="routes">
+                <div class="tab-pane " id="routes">
                     <h4>Routes</h4>
                     <div style="margin: 20px 0;">
                         <button @click="togglePins()" class="btn btn-secondary">Toggle Pins</button>
@@ -137,6 +144,26 @@
                     <br>
 
                     <p></p>
+                </div>
+                <!-- RADIO MAP TAB-->
+                <div class="tab-pane active" id="radio">
+                    <h4>Radio Map</h4>
+                    <div class="pointsContainer">
+                        <div v-for="(bssid, index) in unique_bssids" :key="index" class="pointInfo" @click="changeSelectedBSSID(bssid, index)" :class="bssid==selected_BSSID? 'point-info-selected': ''">
+                            [[ index ]]. [[ bssid ]]
+                        </div>
+{#                        <div v-if="floorPlan.pins && floorPlan.pins.length==0">No bssids found.</div>#}
+                    </div>
+                    <p></p>
+                </div>
+                <!-- TESTING TAB-->
+                <div class="tab-pane" id="testing">
+                    <h4>Testing</h4>
+                    <div v-for="(test_point, index) in test_points" :key="index" class="pointInfo" @click="changeSelectedTestPoint(test_point, index)" :class="selectedTestPoint==index? 'point-info-selected': ''"> <!---->
+                            [[ index ]]. [[ test_point.x ]] [[ test_point.y ]] | [[ test_point.scans.length ]]
+                    </div>
+{#                    <div v-if="floorPlan.pins && floorPlan.pins.length==0">No test_points found.</div>#}
+                    <br>
                 </div>
                 <!-- LIVE LOCATIONS TAB-->
                 <div class="tab-pane" id="live">
@@ -217,11 +244,15 @@
                 routes: [],
                 scanning: false,
                 selectedPoint: '',
-
-                uniquePoints: [], // to show in the points tab (a sing point can have many scans, so we don't show all of them)
+                radioMap: {},
+                unique_bssids: [],
+                selected_BSSID: '',
 
                 currentRoute: 0,
                 currentRoutePoint: 0,
+
+                test_points: [],
+                selectedTestPoint: 0,
 
                 newRoomName: '',
                 newRoomMessage: '',
@@ -231,8 +262,11 @@
                 console.log("floor_plan_id: ", this.floor_plan_id);
                 console.log("floor_plan_img: ", this.floor_plan_img);
 
-                this.getFloorPlan();
-                {#this.getRoutes();#}
+                this.getFloorPlan();  // getting rooms and routes
+                this.getPoints();     // getting signal points and number of scans of radio map
+                this.getRadioMap();   // getting radio map dataframe
+                this.getBssids();     // getting unique bssids of radio map
+                this.getTestPoints(); // getting test points
 
                 this.img = document.getElementById("imgForCanvas");
                 this.img.src = "/static/images/" + this.floor_plan_img + '/';
@@ -241,9 +275,6 @@
                 this.imgPinGreen = document.getElementById("mapPinImageGreen");
                 this.imgPinYellow = document.getElementById("mapPinImageYellow");
 
-                {#console.log(img.width)#}
-                {#console.log(img.height)#}
-
                 this.img.addEventListener('load', () => {
                     // using the FloorPlan class
                     let canvas = document.getElementById("myCanvas");
@@ -251,8 +282,8 @@
                     this.floorPlan.setRooms(this.rooms);
                     this.floorPlan.setPins(this.pins);
                     this.floorPlan.routes = this.routes;
-                    {#this.changeMode('fingerprinting');#}
-                    document.getElementById('TAB_Finger').click();
+
+                    document.getElementById('TAB_Testing').click(); // change active tab
 
                     this.floorPlan.canvas.addEventListener('showNewRoomModal', () => {
                         $('#newRoomModal').modal('show');
@@ -261,7 +292,6 @@
                         $('#newRoomModal').modal('hide');
                     }, false)
                 })
-
 
                 // -------------------------------------------------------------------------------  Socket listeners --------------
                 this.ws = new ReconnectingWebSocket('ws://127.0.0.1:8000/ws/browserWS/')
@@ -375,43 +405,108 @@
                     axios.get('/api/floorPlans/' + this.floor_plan_id) //+ '/?date=' + new Date().toISOString()
                     .then(res => {
                         console.log("Floorplan: ", res.data)
-                        this.rooms = res.data.rooms
-                        this.pins = res.data.signal_points
-                        this.pins = this.pins.map(pin => {
-                            return {
-                                floor_plan_id: pin.floor_plan_id,
-                                id: pin.id,
-                                x: pin.x,
-                                y: pin.y,
-                                networks: JSON.parse(pin.networks)
-                            }
-                        })
+                        this.rooms = res.data.rooms;
                         this.routes = res.data.routes;
                         this.routes = this.routes.map(route => {
                             return JSON.parse(route.points)
                         })
-
-                        // TODO combine pins of the same point to a single point and then show the points in the Points tab and not the pins.
-                        let uniquePoints = []
-                        for (let i=0; i<this.pins.length; i++) {
-                            let pin = this.pins[i];
-                            let foundPin = false;
-                            for (let j=0; j<uniquePoints.length; j++) {
-                                if (uniquePoints[j].x == pin.x && uniquePoints[j].y == pin.y) {
-                                    foundPin = true;
-                                }
-                            }
-                            if (!foundPin) {
-                                uniquePoints.push(pin);
-                            }
-                        }
-                        this.uniquePoints = uniquePoints;
                         this.floorPlan.setRooms(this.rooms);
-                        this.floorPlan.setPins(this.uniquePoints);
                         this.floorPlan.setRoutes(this.routes);
-                        {#console.log(uniquePoints);#}
                     })
                     .catch(err => {console.log(err)})
+                },
+
+                getPoints() {
+                    console.log("getting Points and scans of radio map...")
+                    axios.get("/"+this.floor_plan_id+"/point_scans/")
+                        .then(res => {
+                            {#console.log(res.data)#}
+                            this.pins = res.data;
+                            this.floorPlan.setPins(this.pins);
+                            {#this.floorPlan.radioMap = this.radioMap;#}
+                        })
+                        .catch(err => {
+                            console.log(err)
+                        })
+                },
+
+                getRadioMap() {
+                    console.log("getting radio map...")
+                    axios.get("/"+this.floor_plan_id+"/radio_map/")
+                        .then(res => {
+                            {#console.log("Radio Map:", res.data)#}
+                            this.radioMap = res.data;
+                            this.floorPlan.radioMap = this.radioMap;
+                        })
+                        .catch(err => {
+                            console.log(err)
+                        })
+                },
+
+                getBssids() {
+                    console.log("getting unique bssids of radio map...")
+                    axios.get("/"+this.floor_plan_id+"/bssids/")
+                    .then(res => {
+                        {#console.log(res)#}
+                        this.unique_bssids = res.data
+                        this.changeSelectedBSSID(this.unique_bssids[0],0);
+                    })
+                    .catch(err => {
+                        console.log(err)
+                    })
+                },
+
+                getTestPoints() {
+                   console.log("getting Test Points of radio map...")
+                    let canvas = document.getElementById('myCanvas')
+                    let width = canvas.width;
+                    let height = canvas.height;
+                    axios.get("/"+this.floor_plan_id+"/test_points/")
+                    .then(res => {
+                        console.log(res.data)
+                        for (let i=0; i<res.data.length; i++) {
+                            res.data[i].x = Math.floor(res.data[i].x * width);
+                            res.data[i].y = Math.floor(res.data[i].y * height)
+                        }
+                        this.test_points = res.data
+                    })
+                    .catch(err => {
+                        console.log(err)
+                    })
+                },
+
+                async changeSelectedTestPoint(test_point, index) {
+                    this.selectedTestPoint = index;
+                    // do knn for room and location
+                    var knns = []
+                    var rooms = []
+                    for (let i=0; i<test_point.scans.length; i++) {
+                        let data = {
+                            networks: test_point.scans[i] // the scanned networks
+                        }
+                        try {
+                            // find room
+                            let res = await axios.post("/localize/room_knn/", data)
+                            let room = res.data.room_pred;
+                            rooms.push(room);
+
+                            // find neighbors
+                            res = await axios.post("/localize/knn/", data)
+                            let neighbors = res.data;
+                            knns.push(neighbors);
+                        } catch (err) {
+                            console.log(err)
+                        }
+                    }
+                    {#console.log(rooms)#}
+                    {#console.log(knns)#}
+                    // show results on map
+                    this.floorPlan.changeSelectedTestPoint(test_point, knns, rooms);
+                },
+
+                changeSelectedBSSID(bssid, index) {
+                    this.floorPlan.changeSelectedBSSID(bssid);
+                    this.selected_BSSID = bssid;
                 },
 
                 deletePin(index, pinId) {
@@ -435,18 +530,6 @@
                         point: point
                     };
                     this.floorPlan.highlightPin(point);
-                },
-
-                mouseOverPoint(point) {
-                    {#console.log("mouse on", index)#}
-                    {#console.log(this.floorPlan.pins[index])#}
-                    {#this.floorPlan.highlightPin(point);#}
-                    {#app.floorPlan.highlightPin(index);#}
-                },
-
-                mouseLeftPoint(point) {
-                    {#console.log("mouse left", index)#}
-                    {#this.floorPlan.unHighlightPin(point);#}
                 },
 
                 deleteRoom(id) {
@@ -514,6 +597,12 @@
                         this.floorPlan.canvas.classList.remove('cursorPointer')
                     } else if (mode == 'fingerprinting') {
                         this.floorPlan.canvas.classList.add('cursorCrosshair')
+                        this.floorPlan.canvas.classList.remove('cursorPointer')
+                    } else if (mode == 'radio_map') {
+                        this.floorPlan.canvas.classList.remove('cursorCrosshair')
+                        this.floorPlan.canvas.classList.remove('cursorPointer')
+                    } else if (mode == 'testing') {
+                        this.floorPlan.canvas.classList.remove('cursorCrosshair')
                         this.floorPlan.canvas.classList.remove('cursorPointer')
                     }
                     this.floorPlan.setMode(mode);

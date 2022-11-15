@@ -88,9 +88,9 @@ for unique_net in unique_bssids:
             std = np.std(dbm_vals)
             var = np.var(dbm_vals)
             mode = statistics.mode(dbm_vals)  # mode is the most frequent value of the array
-            mean_arr = np.repeat(mean, 40)
-            mode_arr = np.repeat(mode, 40)
-            x_val = np.arange(0, 40, 1)
+            mean_arr = np.repeat(mean, 85)
+            mode_arr = np.repeat(mode, 85)
+            x_val = np.arange(0, 85, 1)
             plt.plot(x_val, mean_arr, color="r", linewidth=1, linestyle="dotted")
             plt.plot(x_val, mode_arr, color="g", linewidth=1, linestyle="dotted")
             plt.figtext(.15, .15, "Mean: " + str(format(mean, ".2f")) +
