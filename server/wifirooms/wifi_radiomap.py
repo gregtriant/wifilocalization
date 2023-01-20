@@ -17,7 +17,6 @@ from sklearn.metrics import mean_squared_error
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
-
 class SignalPoint:
     RSSI_LOWEST = -100  # dBm
 
@@ -39,6 +38,8 @@ class SignalPoint:
 
 
 class RadioMap:
+    FIRST_SCANS_NUM = 40
+    SECOND_SCANS_NUM = 40
     unique_bssids_of_floor_plan = []
     signal_points = []
     df_dataset = []
@@ -46,6 +47,7 @@ class RadioMap:
 
     def __init__(self, points_from_database, rooms_from_database):
         self.rooms = rooms_from_database
+        self.signal_points = []
         # for each scan we see the coordinates and group them to single points. One point has a number of scans
         for index, point in enumerate(points_from_database):
             # print(index, point['networks'])
@@ -58,7 +60,7 @@ class RadioMap:
 
                 point1_y = math.floor(self.signal_points[i].y * height)
                 point2_y = math.floor(point['y'] * height)
-                if point1_x == point2_x and point1_y == point2_y:  # found same point
+                if abs(point1_x-point2_x) <= 2 and abs(point1_y-point2_y) <=2:  # found same point
                     # add networks
                     self.signal_points[i].add_scan(json.loads(point['networks']))
                     found_it = True
@@ -74,6 +76,29 @@ class RadioMap:
         print('Found ', len(self.signal_points), 'different points')
 
 
+    def add_scan_to_radio_map(self, x, y, networks): # this function exists so that we dont have to reconstuct the radio
+                                                     # map every time we add a new scan.
+        found_it = False
+        for i in range(0, len(self.signal_points)):
+            width = 600  # example width and height just to upscale the points
+            height = 581
+            point1_x = math.floor(self.signal_points[i].x * width)
+            point2_x = math.floor(x * width)
+
+            point1_y = math.floor(self.signal_points[i].y * height)
+            point2_y = math.floor(y * height)
+            if abs(point1_x - point2_x) <= 2 and abs(point1_y - point2_y) <= 2:  # found same point
+                # add networks
+                self.signal_points[i].add_scan(json.loads(networks))
+                found_it = True
+                break
+
+        if found_it is False:
+            # add new sp
+            sp = SignalPoint(x, y, json.loads(networks))
+            self.find_room_of_point(sp)
+            self.signal_points.append(sp)
+
 
     def find_room_of_point(self, sp):
         for room in self.rooms:
@@ -83,14 +108,13 @@ class RadioMap:
                 break
 
     def make_radio_map(self):
-        for index, signal_point in enumerate(self.signal_points):
-            # print("-------------------------------------------------")
-            # print(str(index) + ")", signal_point.x, signal_point.y)
+        for index, signal_point in enumerate(self.signal_points): # all 129 signal points
+
             # find the unique bssids that were found during the 40 scans on this point
             # we need to do this because not all the bssids appear in each scan. some may be less frequent
             unique_bssids_of_point = []
-            for scan in signal_point.scans:
-                # print(index, scan)
+            for scan_index, scan in enumerate(signal_point.scans):
+
                 for network in scan:
                     # print(network)
                     if network['BSSID'] not in unique_bssids_of_point:
@@ -104,6 +128,8 @@ class RadioMap:
                 signal_strengths = []
                 freq = 0
                 for scan_index, scan in enumerate(signal_point.scans):
+                    # if scan_index >= self.NUMBER_OF_SCANS_FOR_RADIOMAP:
+                    #     continue
                     for network in scan:
                         if network['BSSID'] == bssid:  # check if this bssid was found in that scan
                             signal_strengths.append((scan_index, network['level']))
@@ -135,6 +161,7 @@ class RadioMap:
                 # bssids = [x[0] for x in self.unique_bssids_of_floor_plan]
                 if bssid not in self.unique_bssids_of_floor_plan:
                     self.unique_bssids_of_floor_plan.append(bssid)
+                    # TODO add a new list of the SSID for that BSSID
 
         print("Found", len(self.unique_bssids_of_floor_plan), "unique and useful bssids for this floor plan.")
         # print(self.unique_bssids_of_floor_plan)

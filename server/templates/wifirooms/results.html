@@ -1,0 +1,486 @@
+{% extends 'base.html' %}
+
+{% block head %}
+    <script src="https://cdn.plot.ly/plotly-2.17.1.min.js"></script>
+
+<style>
+
+</style>
+
+{% endblock %}
+
+{% block content %}
+    <div class="container-fluid">
+        <h3 class="">Results</h3>
+        <hr>
+
+        <div id="results"></div>
+    </div>
+
+    <div class="container-fluid" id="vue-app">
+        <div>
+{#            [[results]]#}
+        </div>
+    </div>
+
+{#    <script>#}
+{#      const res = d3.csvParse("Name,Age\nJane,29\nJoe,33");#}
+{#      console.log(res);#}
+{#    </script>#}
+    <script>
+        let app = new Vue({
+            el: "#vue-app",
+            delimiters: ['[[', ']]'],
+            data: {
+                message: 'Hello from vue',
+                results: [],
+                floorplanid: '',
+                routes: []
+            },
+            async created() {
+                console.log('host: ', window.location.host)
+                console.log('url:', window.location.pathname)
+                this.floorplanid = window.location.pathname.split('/')[0]
+                await this.getResults();
+                await this.getRoutes();
+
+                this.makeResultCharts();
+
+                await this.getAllScans(0);
+                await this.getDeadReckoningData();
+            },
+            methods: {
+                async getResults() {
+                    try {
+                        const res = await axios.get("/localize/localization_results/1/")
+                        {#console.log(res.data)#}
+                        this.results = res.data;
+                    } catch(e) {
+                        console.log(e)
+                    }
+                },
+
+                async getRoutes() {
+                    try {
+                        const res = await axios.get('/api/routes/?floor_plan_id=1')
+                        {#console.log(res.data);#}
+                        this.routes = res.data;
+                    } catch(e) {
+                        console.log(e)
+                    }
+                },
+
+                async getDeadReckoningData() {
+                    try {
+                        const res = await axios.get('/static/data/small_room.csv')
+                        {#console.log(res.data);#}
+                        let csvData = res.data;
+                        let lines = csvData.split('\n');
+                        let acc_x = []
+                        let acc_y = []
+                        let acc_z = []
+
+                        let mag_x = []
+                        let mag_y = []
+                        let mag_z = []
+
+                        let gyr_x = []
+                        let gyr_y = []
+                        let gyr_z = []
+
+                        let times = []
+                        for (let i=0; i<lines.length; i++) {
+                            line_data = lines[i].split(',');
+                            {#console.log(line_data);#}
+                            if (line_data.length != 10) continue;
+                            times.push(i)
+                            acc_x.push(line_data[1])
+                            acc_y.push(line_data[2])
+                            acc_z.push(line_data[3])
+
+                            mag_x.push(line_data[4])
+                            mag_y.push(line_data[5])
+                            mag_z.push(line_data[6])
+
+                            gyr_x.push(line_data[7])
+                            gyr_y.push(line_data[8])
+                            gyr_z.push(line_data[9])
+                        }
+                        this.makeDeadReckoningCharts(times, acc_x, acc_y, acc_z, mag_x, mag_y, mag_z, gyr_x, gyr_y, gyr_z)
+                    } catch(e) {
+                        console.log(e)
+                    }
+                },
+
+                makeDeadReckoningCharts(times, acc_x, acc_y, acc_z, mag_x, mag_y, mag_z, gyr_x, gyr_y, gyr_z) {
+                    const resultsDiv = document.getElementById('results');
+                    let Accel = {x: acc_x, y: acc_y, z: acc_z};
+                    let Magnet = {x: mag_x, y: mag_y, z: mag_z};
+                    let Gyro = {x: gyr_x, y: gyr_y, z: gyr_z};
+                    let data = {Accel, Magnet, Gyro};
+
+                    for (const [key1, value1] of Object.entries(data)) {
+                        console.log(`${key1}: ${value1}`);
+                        let traces = []
+                        for (const [key, value] of Object.entries(value1)) {
+                            console.log(`${key}: ${value}`);
+                            let new_trace = {
+                                x: times,
+                                y: value,
+                                name: key1 + "_" + key,
+                                mode: 'lines',
+                                type: 'scatter',
+                            };
+                            traces.push(new_trace)
+                        }
+                        const newDiv1 = document.createElement("div");
+                        newDiv1.id = key1 + '_chart';
+                        resultsDiv.appendChild(newDiv1);
+                        let layout = {
+                            showlegend: true,
+                            legend: {"orientation": "h"},
+                            title: key1,
+                            xaxis: {
+                                {#title: 'index'#}
+                            },
+                            yaxis: {
+                                {#range: [-105, -20],#}
+                                title: key1
+                            },
+                        }
+                        Plotly.newPlot(key1 + '_chart', traces, layout);
+                    }
+
+                },
+
+                async getAllScans(point_index) {
+                    try {
+                        const res = await axios.get('/1/all_scans/' + point_index)
+                        {#console.log(res.data);#}
+                        let scans = res.data;
+                        let unique_bssids = [];
+                        for (let i=0; i<scans.length; i++) {
+                            let networks = scans[i];
+                            for (let j=0; j<networks.length; j++) {
+                                let data = {
+                                    bssid: networks[j].BSSID,
+                                    ssid: networks[j].SSID,
+                                    scans: [],
+                                    freq: 0
+                                }
+                                let found = false;
+                                for (let k=0; k<unique_bssids.length; k++) {
+                                    if (unique_bssids[k].bssid == data.bssid) {
+                                        found = true;
+                                        break
+                                    }
+                                }
+                                if (!found) {
+                                    unique_bssids.push(data);
+                                }
+                            }
+                        }
+
+                        for (let i=0; i<unique_bssids.length; i++) {
+                            let freq = 0;
+                            for (let j=0; j<scans.length; j++) {
+                                let networks = scans[j];
+                                let data = {
+                                    scan: j,
+                                    rssi: -100
+                                }
+                                for (let k=0; k<networks.length; k++) {
+                                    if (networks[k].BSSID == unique_bssids[i].bssid) {
+                                        data.rssi = networks[k].level;
+                                        freq++;
+                                    }
+                                }
+                                unique_bssids[i].scans.push(data)
+                            }
+                            freq = freq/scans.length;
+                            unique_bssids[i].freq = freq;
+                        }
+                        {#console.log(unique_bssids)#}
+                        this.makeRSSICharts(unique_bssids)
+
+                    } catch(e) {
+                        console.log(e)
+                    }
+
+                },
+
+                makeRSSICharts(unique_bssids) {
+                    const resultsDiv = document.getElementById('results');
+                    let traces = []
+                    for (let i=0; i<unique_bssids.length; i++) {
+
+                        if (unique_bssids[i].freq > 0.7) {
+
+                            {#console.log(unique_bssids[i])#}
+                            const newDiv1 = document.createElement("div");
+                            newDiv1.id = 'rssi_chart_' + i;
+                            resultsDiv.appendChild(newDiv1);
+                            let rssis = []
+                            let indexes = []
+                            let scans = unique_bssids[i].scans
+                            for (let j=0; j<scans.length; j++) {
+                                if (scans[j].rssi != -100) {
+                                    rssis.push(scans[j].rssi)
+                                } else {
+                                    rssis.push(null);
+                                }
+                                indexes.push(j)
+                            }
+
+                            let new_trace = {
+                                x: indexes,
+                                y: rssis,
+                                name: unique_bssids[i].ssid,
+                                mode: 'lines+markers',
+                                type: 'scatter'
+                            };
+                            traces.push(new_trace)
+                            {#console.log(new_trace)#}
+                            let layout = {
+                                showlegend: true,
+	                            legend: {"orientation": "h"},
+                                title: unique_bssids[i].bssid + ' ' + unique_bssids[i].ssid,
+                                xaxis: {
+                                    title: 'Scan index'
+                                },
+                                yaxis: {
+                                    range: [-105, -20],
+                                    title: 'Rssi (dBm)'
+                                },
+                            }
+                            Plotly.newPlot('rssi_chart_' + i, [new_trace], layout);
+                        }
+                    }
+                    const newDiv1 = document.createElement("div");
+                    newDiv1.id = 'all_scans';
+                    resultsDiv.appendChild(newDiv1);
+                    let layout = {
+                        showlegend: true,
+                        legend: {"orientation": "h"},
+                        title: 'All scans for point',
+                        xaxis: {
+                            {#title: 'Scan index'#}
+                        },
+                        yaxis: {
+                            range: [-105, -20],
+                            title: 'Rssi (dBm)'
+                        },
+                    }
+                    Plotly.newPlot("all_scans", traces, layout);
+                },
+
+                makeResultCharts() {
+                    const resultsDiv = document.getElementById('results');
+
+                    let algos = [];
+                    let roomAcc = [];
+                    let robotRoomAcc = [];
+                    let human1RoomAcc = [];
+                    let human2RoomAcc = [];
+
+                    let meanDist = [];
+                    let robotMeanDist = [];
+                    let human1MeanDist = [];
+                    let human2MeanDist = [];
+
+                    let big_plot_data = []
+
+                    for (let i=0; i<this.results.length; i++) {
+                        let data = this.results[i];
+                        let avgDistOfPoints = data.avg_dist_of_points;
+                        let indexes = [...Array(avgDistOfPoints.length).keys()]
+                        let new_trace = {
+                            x: indexes,
+                            y: avgDistOfPoints,
+                            name: data.algorithm,
+                            mode: 'markers',
+                            type: 'scatter'
+                        };
+                        big_plot_data.push(new_trace);
+
+                        algos.push(data.algorithm);
+                        roomAcc.push((data.room_pred_accuracy * 100).toFixed(2));
+                        robotRoomAcc.push((data.robot_room_pred_acc * 100).toFixed(2));
+                        human1RoomAcc.push((data.human1_room_pred_acc * 100).toFixed(2));
+                        human2RoomAcc.push((data.human2_room_pred_acc * 100).toFixed(2));
+
+                        meanDist.push(data.mean_dist_in_meters.toFixed(2));
+                        robotMeanDist.push(data.robot_mean_dist_in_meters.toFixed(2));
+                        human1MeanDist.push(data.human1_mean_dist_in_meters.toFixed(2));
+                        human2MeanDist.push(data.human2_mean_dist_in_meters.toFixed(2));
+                    }
+
+                    const newDiv1 = document.createElement("div");
+                    newDiv1.id = 'big_plot';
+                    resultsDiv.appendChild(newDiv1);
+                    {#let data = [trace1, trace2, trace3, trace4];#}
+                    let shapes = [];
+                    let prevLineIndex = 0;
+                    let fillcolors = ['#ff8c8c', '#ababab'];
+                    let traceText = {
+                      x: [],
+                      y: [],
+                      text: [],
+                      mode: 'text',
+                        name: 'routes'
+                    };
+                    for (let i=0; i<this.routes.length; i++) {
+                        let points = JSON.parse(this.routes[i].points);
+                        {#console.log(points.length)#}
+                        let color = i%2 == 0? fillcolors[0] : fillcolors[1];
+                        let text = 'r: ' + i;
+                        traceText.text.push(text);
+                        traceText.x.push(prevLineIndex + 3);
+
+                        traceText.y.push(i%2 == 0? 640: 610);
+                        let newShape = {
+                            type: 'rect',
+                            // x-reference is assigned to the x-values
+                            xref: 'x',
+                            // y-reference is assigned to the plot paper [0,1]
+                            yref: 'y', //paper
+                            x0: prevLineIndex,
+                            y0: 0,
+                            x1: prevLineIndex + points.length,
+                            y1: 630,
+                            fillcolor: color,
+                            opacity: 0.3,
+                            line: {
+                                width: 1
+                            }
+                        }
+                        prevLineIndex += points.length;
+                        shapes.push(newShape);
+                    }
+                    let layout1 = {
+                        title: 'Avg Error at each point',
+                        xaxis: {
+                            title: 'Point Index'
+                        },
+                        yaxis: {
+                            title: 'Distance Error'
+                        },
+                        shapes: shapes
+                    };
+
+                    big_plot_data.push(traceText);
+                    Plotly.newPlot('big_plot', big_plot_data, layout1);
+
+                    const newDiv2 = document.createElement("div");
+                    newDiv2.id = 'room_pred';
+                    resultsDiv.appendChild(newDiv2);
+
+                    let trace1 = {
+                        x: algos,
+                        y: roomAcc,
+                        name: 'total',
+                        type: 'bar',
+                        marker:{
+                            color: 'rgba(255,116,116,0.84)'
+                        },
+                    };
+                    let trace2 = {
+                        x: algos,
+                        y: robotRoomAcc,
+                        name: 'robot',
+                        type: 'bar',
+                        marker:{
+                            color: 'rgba(253,219,94,0.82)'
+                        },
+                    };
+                    let trace3 = {
+                        x: algos,
+                        y: human1RoomAcc,
+                        name: 'human',
+                        type: 'bar',
+                        marker:{
+                            color: 'rgba(84,222,52,0.63)'
+                        },
+                    };
+                    let trace4 = {
+                        x: algos,
+                        y: human2RoomAcc,
+                        name: 'rotatingHuman',
+                        type: 'bar',
+                        marker:{
+                            color: 'rgba(86,107,255,0.93)'
+                        },
+                    };
+                    let data = [trace1, trace2, trace3, trace4];
+                    let layout = {
+                        barmode: 'group',
+                        title: 'Room Prediction Accuracy',
+                        xaxis: {
+                            title: 'Algorithms'
+                        },
+                        yaxis: {
+                            range: [0, 100],
+                            title: 'Accuracy %'
+                        },
+                    };
+                    Plotly.newPlot('room_pred', data, layout);
+
+                    const newDiv3 = document.createElement("div");
+                    newDiv3.id = 'dist_pred';
+                    resultsDiv.appendChild(newDiv3);
+
+                    let trace5 = {
+                        x: algos,
+                        y: meanDist,
+                        name: 'total',
+                        type: 'bar',
+                        marker:{
+                            color: 'rgba(255,116,116,0.84)'
+                        },
+                    };
+                    let trace6 = {
+                        x: algos,
+                        y: robotMeanDist,
+                        name: 'robot',
+                        type: 'bar',
+                        marker:{
+                            color: 'rgba(253,219,94,0.82)'
+                        },
+                    };
+                    let trace7 = {
+                        x: algos,
+                        y: human1MeanDist,
+                        name: 'human',
+                        type: 'bar',
+                        marker:{
+                            color: 'rgba(84,222,52,0.63)'
+                        },
+                    };
+                    let trace8 = {
+                        x: algos,
+                        y: human2MeanDist,
+                        name: 'rotatingHuman',
+                        type: 'bar',
+                        marker:{
+                            color: 'rgba(86,107,255,0.93)'
+                        },
+                    };
+                    let data2 = [trace5, trace6, trace7, trace8];
+                    let layout2 = {
+                        barmode: 'group',
+                        title: 'Mean Distance Error',
+                        xaxis: {
+                            title: 'Algorithms'
+                        },
+                        yaxis: {
+                            title: 'Mean distance Error (m)'
+                        },
+                    };
+                    Plotly.newPlot('dist_pred', data2, layout2);
+                },
+            }
+
+        })
+
+    </script>
+{% endblock %}

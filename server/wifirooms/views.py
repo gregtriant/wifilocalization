@@ -1,4 +1,5 @@
-from django.core import serializers
+import math
+
 from django.shortcuts import render, get_object_or_404
 from .models import FloorPlan, Room, SignalPoint, Route
 from django.http import JsonResponse, HttpResponseServerError, HttpResponse
@@ -14,29 +15,49 @@ import time
 from .wifi_globals import connectedWS
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
-
-import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 
-print("Views.py... Making Radio map for FloorPlan: 1")
-start = time.time()
-data = serializers.serialize("json", SignalPoint.objects.all())
-data = json.loads(data)
-points = []
-for point in data:
-    points.append(point['fields'])
+floor_plans = FloorPlan.objects.all()
+radio_maps = []
+localizers = []
 
-data = serializers.serialize("json", Room.objects.all())
-data = json.loads(data)
-rooms = []
-for room in data:
-    rooms.append(room['fields'])
+for floor_plan in floor_plans:
+    if floor_plan.id == 2:
+        break
+    print("--> Views.py... Making Radio map for FloorPlan:", floor_plan.name, "...")
+    start = time.time()
+    data = serializers.serialize("json", SignalPoint.objects.filter(FloorPlan_id=floor_plan.id))
+    data = json.loads(data)
+    points = []
+    for point in data:
+        points.append(point['fields'])
+    data = serializers.serialize("json", Room.objects.filter(FloorPlan_id=floor_plan.id))
+    data = json.loads(data)
+    rooms = []
+    for room in data:
+        rooms.append(room['fields'])
+    rm = None
+    rm = RadioMap(points, rooms)
+    rm.make_radio_map()
+    end = time.time()
+    rm_data = {
+        "floor_plan_id": floor_plan.id,
+        "radio_map": rm
+    }
+    radio_maps.append(rm_data)
+    print("--> Views.py... Done! -- time:", end - start, "\n")
 
-rm = RadioMap(points, rooms)
-rm.make_radio_map()
-end = time.time()
-print("Made new Radio map!!! -- time:", end-start, "\n")
+    # print("--> Views.py... Making Localizers for FloorPlan:", floor_plan.name, "...")
+    # start = time.time()
+    # localizer = Localization(rm)
+    # end = time.time()
+    # localizer_data = {
+    #     "floor_plan_id": floor_plan.id,
+    #     "localizer": localizer
+    # }
+    # localizers.append(localizer_data)
+    # print("--> Views.py... Done! -- time:", end - start, "\n")
+    del rm
 
 
 @csrf_exempt
@@ -44,58 +65,79 @@ def index(request):
     floor_plans = FloorPlan.objects.order_by('-pub_date')
     context = {'floor_plans': floor_plans}
     return render(request, 'wifirooms/index.html', context)
-    # return HttpResponse("Hello, world. You're at the polls index.")
 
+@csrf_exempt
+def results(request, floor_plan_id):
+    # floor_plans = FloorPlan.objects.order_by('-pub_date')
+    # context = {'floor_plans': floor_plans}
+    return render(request, 'wifirooms/results.html')
 
 @csrf_exempt
 def radio_map(request, floor_plan_id):
-    # return render(request, 'wifirooms/radio_map.html', {
-    #     'floor_plan_id': floor_plan_id,
-    # })
-    return HttpResponse(rm.df_dataset.to_json())
-
+    for rm in radio_maps:
+        if rm["floor_plan_id"] == floor_plan_id:
+            return HttpResponse(rm["radio_map"].df_dataset.to_json())
 
 @csrf_exempt
 def bssids(request, floor_plan_id):
-    # if request.method == 'GET':
-    return HttpResponse(json.dumps(rm.unique_bssids_of_floor_plan))
-
+    for rm in radio_maps:
+        if rm["floor_plan_id"] == floor_plan_id:
+            return HttpResponse(json.dumps(rm["radio_map"].unique_bssids_of_floor_plan))
 
 @csrf_exempt
-def test_points(request, floor_plan_id):
-    test_pts = []
-    for sp in rm.signal_points:
-        scans = []
-        x = sp.x
-        y = sp.y
-        r = sp.room
-        for i, scan in enumerate(sp.scans):
-            if i>79:
-                scans.append(scan)
-        p = {
-            'x': x,
-            'y': y,
-            'room': r,
-            'scans': scans
-        }
-        test_pts.append(p)
+def classification_algorithms(request):
+    return HttpResponse(json.dumps(localizers[0]["localizer"].names_of_classifiers))
+
+@csrf_exempt
+def test_points(request, floor_plan_id): # returns the test points with the scans on each point
+    test_pts = findTestPoints(floor_plan_id)
     return HttpResponse(json.dumps(test_pts))
 
 
+def findTestPoints(floor_plan_id):
+    test_pts = []
+    for rm in radio_maps:
+        if rm["floor_plan_id"] == floor_plan_id:
+            for sp in rm["radio_map"].signal_points:
+                scans = []
+                x = sp.x
+                y = sp.y
+                r = sp.room
+                for i, scan in enumerate(sp.scans):
+                    if i > 79:
+                        scans.append(scan)
+                p = {
+                    'x': x,
+                    'y': y,
+                    'room': r,
+                    'scans': scans
+                }
+                test_pts.append(p)
+            return test_pts
+
 @csrf_exempt
 def point_scans(request, floor_plan_id):
-
     point_scans = []
-    for sp in rm.signal_points:
-        point = {
-            'x': sp.x,
-            'y': sp.y,
-            'room': sp.room,
-            'scans': len(sp.scans)
-        }
-        point_scans.append(point)
-    return HttpResponse(json.dumps(point_scans))
+    for rm in radio_maps:
+        if rm["floor_plan_id"] == floor_plan_id:
+            for sp in rm["radio_map"].signal_points:
+                point = {
+                    'x': sp.x,
+                    'y': sp.y,
+                    'room': sp.room,
+                    'scans': len(sp.scans)
+                }
+                point_scans.append(point)
+            return HttpResponse(json.dumps(point_scans))
 
+@csrf_exempt
+def all_scans(request, floor_plan_id, point_index):
+    for rm in radio_maps:
+        if rm["floor_plan_id"] == floor_plan_id:
+            for index, sp in enumerate(rm["radio_map"].signal_points):
+                if index == point_index:
+                    print(index, sp.scans)
+            return HttpResponse(json.dumps(sp.scans))
 
 def dbm_to_percent(dbm):
     quality = 0
@@ -107,17 +149,212 @@ def dbm_to_percent(dbm):
         quality = 2 * (dbm + 100)
     return quality
 
+@csrf_exempt
+def localize_test_all(request, floor_plan_id):
+    localizer = None
+    for local in localizers:
+        if local["floor_plan_id"] == floor_plan_id:
+            localizer = local["localizer"]
+            break
+    print("Testing all algorithms!")
+    start = time.time()
+    test_pts = findTestPoints(1)
+    # print(test_pts)
+    width = 600
+    height = 581
+    response_data = []
+    for i, algo in enumerate(localizer.names_of_classifiers): # 8-10 classifiers
+        # send progress to client
+        # if i == 1:
+        #     break
+
+        algo_data = {
+            "algorithm": algo,
+        }
+        print('\n ------- ', algo_data, ' ------- ')
+
+        # send the point to all Connected Browsers
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)("browsers", {
+            "type": "test.progress",
+            "data": algo_data
+        })
+        dists = []
+        avg_dist_of_points = []
+        correct_room_preds = 0
+        total_room_preds = 0
+
+        robot_dists = []
+        robot_avg_dist_of_points = []
+        robot_correct_room_preds = 0
+        robot_total_room_preds = 0
+
+        human1_dists = []
+        human1_avg_dist_of_points = []
+        human1_correct_room_preds = 0
+        human1_total_room_preds = 0
+
+        human2_dists = []
+        human2_avg_dist_of_points = []
+        human2_correct_room_preds = 0
+        human2_total_room_preds = 0
+
+        for j, tp in enumerate(test_pts): # 129 points
+            x = tp["x"]
+            y = tp["y"]
+            room = tp["room"]
+            scans = tp["scans"]
+
+            robot_scans = scans[-14:-9]
+            human_scans = scans[-9:-4]
+            rotating_human_scans = scans[-4:]
+
+            # print(len(robot_scans))
+            # print(len(human_scans))
+            # print(len(rotating_human_scans))
+            avg_dist = 0
+            robot_avg_dist = 0
+            human1_avg_dist = 0
+            human2_avg_dist = 0
+            for scan in robot_scans: # 5 scans for each point
+                pred_point = localizer.find_point(scan, algo)
+                pred_room = localizer.find_room(scan, algo)[0]
+
+                total_room_preds += 1
+                robot_total_room_preds += 1
+                if pred_room == room:
+                    robot_correct_room_preds += 1
+                    correct_room_preds += 1
+
+                dist = math.sqrt(((x*width - pred_point["x"]*width) * (x*width - pred_point["x"]*width)) + ((y*height - pred_point["y"]*height) * (y*height - pred_point["y"]*height)))
+                # print(dist)
+                avg_dist += dist
+                robot_avg_dist += dist
+                dists.append(dist)
+                robot_dists.append(dist)
+
+            for scan in human_scans:  # 5 scans for each point
+                pred_point = localizer.find_point(scan, algo)
+                pred_room = localizer.find_room(scan, algo)[0]
+
+                total_room_preds += 1
+                human1_total_room_preds += 1
+                if pred_room == room:
+                    human1_correct_room_preds += 1
+                    correct_room_preds += 1
+
+                dist = math.sqrt(((x * width - pred_point["x"] * width) * (x * width - pred_point["x"] * width)) + (
+                            (y * height - pred_point["y"] * height) * (y * height - pred_point["y"] * height)))
+                # print(dist)
+                avg_dist += dist
+                human1_avg_dist += dist
+                dists.append(dist)
+                human1_dists.append(dist)
+
+            for scan in rotating_human_scans:  # 4 scans for each point
+                pred_point = localizer.find_point(scan, algo)
+                pred_room = localizer.find_room(scan, algo)[0]
+
+                total_room_preds += 1
+                human2_total_room_preds += 1
+                if pred_room == room:
+                    human2_correct_room_preds += 1
+                    correct_room_preds += 1
+
+                dist = math.sqrt(((x * width - pred_point["x"] * width) * (x * width - pred_point["x"] * width)) + (
+                        (y * height - pred_point["y"] * height) * (y * height - pred_point["y"] * height)))
+                # print(dist)
+                avg_dist += dist
+                human2_avg_dist += dist
+                dists.append(dist)
+                human2_dists.append(dist)
+
+            robot_avg_dist /=5
+            robot_avg_dist_of_points.append(robot_avg_dist)
+            human1_avg_dist /= 5
+            human1_avg_dist_of_points.append(human1_avg_dist)
+            human2_avg_dist /= 4
+            human2_avg_dist_of_points.append(human2_avg_dist)
+            avg_dist /= 14
+            avg_dist_of_points.append(avg_dist)
+
+        room_pred_accuracy = correct_room_preds/total_room_preds
+        print("total room acc:", room_pred_accuracy)
+        robot_room_pred_acc = robot_correct_room_preds/robot_total_room_preds
+        print("Robot room acc:", robot_room_pred_acc)
+        human1_room_pred_acc = human1_correct_room_preds / human1_total_room_preds
+        print("Human room acc:", human1_room_pred_acc)
+        human2_room_pred_acc = human2_correct_room_preds / human2_total_room_preds
+        print("Rotating human room acc:", human2_room_pred_acc, '\n')
+
+        mean_dist = np.mean(dists)
+        mean_dist_in_meters = mean_dist / 60 # 30 pixels = 0.5m => 60 pixels = 1m
+        print("total mean dist:", mean_dist, 'px')
+        print("total mean dist:", mean_dist_in_meters, 'm')
+
+        robot_mean_dist = np.mean(robot_dists)
+        robot_mean_dist_in_meters = robot_mean_dist / 60  # 30 pixels = 0.5m => 60 pixels = 1m
+        print("Robot mean dist:", robot_mean_dist, 'px')
+        print("Robot mean dist:", robot_mean_dist_in_meters, 'm')
+
+        human1_mean_dist = np.mean(robot_dists)
+        human1_mean_dist_in_meters = human1_mean_dist / 60  # 30 pixels = 0.5m => 60 pixels = 1m
+        print("Human mean dist:", human1_mean_dist, 'px')
+        print("Human mean dist:", human1_mean_dist_in_meters, 'm')
+
+        human2_mean_dist = np.mean(robot_dists)
+        human2_mean_dist_in_meters = human2_mean_dist / 60  # 30 pixels = 0.5m => 60 pixels = 1m
+        print("Rotating human mean dist:", human2_mean_dist, 'px')
+        print("Rotating human mean dist:", human2_mean_dist_in_meters, 'm')
+
+        algo_data["room_pred_accuracy"] = room_pred_accuracy
+        algo_data["robot_room_pred_acc"] = robot_room_pred_acc
+        algo_data["human1_room_pred_acc"] = human1_room_pred_acc
+        algo_data["human2_room_pred_acc"] = human2_room_pred_acc
+
+        algo_data["mean_dist"] = mean_dist
+        algo_data["mean_dist_in_meters"] = mean_dist_in_meters
+        algo_data["robot_mean_dist"] = robot_mean_dist
+        algo_data["robot_mean_dist_in_meters"] = robot_mean_dist_in_meters
+        algo_data["human1_mean_dist"] = human1_mean_dist
+        algo_data["human1_mean_dist_in_meters"] = human1_mean_dist_in_meters
+        algo_data["human2_mean_dist"] = human2_mean_dist
+        algo_data["human2_mean_dist_in_meters"] = human2_mean_dist_in_meters
+
+        algo_data["avg_dist_of_points"] = avg_dist_of_points
+        # print(robot_avg_dist_of_points)
+        # print(human1_avg_dist_of_points)
+        # print(human2_avg_dist_of_points)
+        # print(avg_dist_of_points)
+        response_data.append(algo_data)
+
+    with open('results_' + str(floor_plan_id) + '.json', 'w') as outfile:
+        json.dump(json.dumps(response_data), outfile)
+
+    end = time.time()
+    print("Done - time:", end - start)
+    return HttpResponse(json.dumps(response_data))
+
 
 @csrf_exempt
-def room_knn(request):
+def localization_results(request, floor_plan_id):
+    with open('results_' + str(floor_plan_id) + '.json') as f:
+        data = json.load(f)
+        return HttpResponse(data)
 
+@csrf_exempt
+def localize_room(request, floor_plan_id):
+    start = time.time()
     room_pred = ''
-    localizer = Localization(rm)
+    localizer = None
+    for local in localizers:
+        if local["floor_plan_id"] == floor_plan_id:
+            localizer = local["localizer"]
     if request.method == 'GET': # this is for testing purposes
         test_point = [{'BSSID': '78:96:82:3a:9d:c8', 'level': -42}, {'BSSID': '28:ff:3e:03:76:dc', 'level': -62}, {'BSSID': '62:ff:3e:03:76:dd', 'level': -65}, {'BSSID': 'f4:23:9c:20:9a:06', 'level': -75},
                       {'BSSID': '0c:b9:12:03:c4:20', 'level': -82}, {'BSSID': '08:26:97:e4:4f:51', 'level': -83}, {'BSSID': '50:78:b3:80:c4:bd', 'level': -86}, {'BSSID': '5a:d4:58:f2:8e:64', 'level': -87},
                       {'BSSID': '78:96:82:2f:ef:4e', 'level': -88}, {'BSSID': '62:96:82:2f:ef:4f', 'level': -89}, {'BSSID': '34:58:40:e6:60:c0', 'level': -92}, {'BSSID': '50:81:40:15:41:e8', 'level': -95}]
-        room = localizer.find_room_knn(test_point)
+        room = localizer.find_room(test_point, 'knn')
         room_pred = room[0]
 
     elif request.method == 'POST':
@@ -127,43 +364,46 @@ def room_knn(request):
         # print(list_data)
 
         test_point = list_data['networks']
-        room = localizer.find_room_knn(test_point)
+        algorithm = list_data['algorithm']
+        room = localizer.find_room(test_point, algorithm)
         room_pred = room[0]
     data = {
         "room_pred": room_pred
     }
+    end = time.time()
+    print("Found room_pred: ", data, " - time:", end - start)
     return HttpResponse(json.dumps(data))
 
 
 @csrf_exempt
-def knn(request):
-    # get all points from the database
-    # make Radio map of floor plan
-    data = serializers.serialize("json", SignalPoint.objects.all())
-    data = json.loads(data)
-    signal_points = []
-    for point in data:
-        signal_points.append(point['fields'])
-
-    localizer = Localization(rm)
-    knns = []
+def localize_point(request, floor_plan_id):
+    start = time.time()
+    pred_point = {}
+    localizer = None
+    for local in localizers:
+        if local["floor_plan_id"] == floor_plan_id:
+            localizer = local["localizer"]
     if request.method == 'GET': # this is for testing purposes
         test_point = [{'BSSID': '78:96:82:3a:9d:c8', 'level': -42}, {'BSSID': '28:ff:3e:03:76:dc', 'level': -62}, {'BSSID': '62:ff:3e:03:76:dd', 'level': -65}, {'BSSID': 'f4:23:9c:20:9a:06', 'level': -75},
                       {'BSSID': '0c:b9:12:03:c4:20', 'level': -82}, {'BSSID': '08:26:97:e4:4f:51', 'level': -83}, {'BSSID': '50:78:b3:80:c4:bd', 'level': -86}, {'BSSID': '5a:d4:58:f2:8e:64', 'level': -87},
                       {'BSSID': '78:96:82:2f:ef:4e', 'level': -88}, {'BSSID': '62:96:82:2f:ef:4f', 'level': -89}, {'BSSID': '34:58:40:e6:60:c0', 'level': -92}, {'BSSID': '50:81:40:15:41:e8', 'level': -95}]
-        knns = localizer.knn(signal_points, test_point, 4)
+        # knns = localizer.knn(signal_points, test_point, 4)
+        pred_point = localizer.knn(test_point, 'knn')
+
 
     elif request.method == 'POST':
         byte_data = request.body  # this is class byte
         string_data = byte_data.decode('UTF-8')  # convert to string
         list_data = json.loads(string_data)  # convert to python list
-        print(list_data)
+        # print(list_data)
 
         test_point = list_data['networks']
-        knns = localizer.knn(signal_points, test_point, 4)
+        algorithm = list_data['algorithm']
+        pred_point = localizer.find_point(test_point, algorithm)
 
-    print("\nTesting found knns: ", knns)
-    return HttpResponse(json.dumps(knns))
+    end = time.time()
+    print("Found point_pred: ", pred_point, " - time:", end-start)
+    return HttpResponse(json.dumps(pred_point))
 
 
 @csrf_exempt
@@ -223,10 +463,17 @@ def fingerprinting(request, floor_plan_id):  # api path: <int:floor_plan_id>/fin
             selected_route = routes[data["route"]] # we select route from index send (assuming the routes are always retrieved with the same order)
             route_points = json.loads(selected_route["fields"]["points"])
             print(route_points[data["point"]])
-            SignalPoint.objects.create(FloorPlan=floor_plan, x=route_points[data["point"]]["x"], y=route_points[data["point"]]["y"], networks=json.dumps(data["wifis"]))
+            point_x = route_points[data["point"]]["x"]
+            point_y = route_points[data["point"]]["y"]
+            SignalPoint.objects.create(FloorPlan=floor_plan, x=point_x, y=point_y, networks=json.dumps(data["wifis"]))
+
+            for rm in radio_maps:
+                if rm["floor_plan_id"] == floor_plan_id:
+                    rm["radio_map"].add_scan_to_radio_map(point_x, point_y, json.dumps(data["wifis"]))
+                    rm["radio_map"].make_radio_map()
 
             response = {
-                "message": "New point being added..."
+                "message": "New point added..."
             }
             return HttpResponse(json.dumps(response))
 

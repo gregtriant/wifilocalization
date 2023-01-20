@@ -9,6 +9,12 @@
         margin-bottom: 15px;
     }
 
+    .left-side {
+        height: 85vh;
+        overflow: scroll;
+        overflow-x: hidden;
+    }
+
     .cursorLoading:hover {
         cursor: progress !important;
     }
@@ -39,7 +45,7 @@
     }
 
     .point-info-selected {
-        background-color: #83a2fc !important;
+        background-color: rgba(167, 191, 255, 0.91) !important;
     }
 
     .pointInfo:hover {
@@ -61,12 +67,17 @@
     .currentPoint {
         background-color: lightblue;
     }
+
+    .currentAlgorithm {
+        background-color: rgba(255, 102, 89, 0.7);
+        font-weight: bold;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
     <div class="row">
-        <div class="col" id="vue-app">
+        <div class="col left-side" id="vue-app">
             <!--TABS-->
             <ul id="tabs" class="nav nav-tabs mb-3" data-tabs="tabs" role="tablist">
                 <li class="nav-item"><a id="TAB_Rooms" @click="changeMode('rooms')" href="#rooms" class="nav-link " data-toggle="tab">Rooms</a></li>
@@ -74,7 +85,7 @@
                 <li class="nav-item"><a id="TAB_Finger" @click="changeMode('fingerprinting')" href="#routes" class="nav-link" data-toggle="tab">Routes</a></li>
                 <li class="nav-item"><a id="TAB_Radio" @click="changeMode('radio_map')" href="#radio" class="nav-link active" data-toggle="tab">Radio Map</a></li>
                 <li class="nav-item"><a id="TAB_Testing" @click="changeMode('testing')" href="#testing" class="nav-link" data-toggle="tab">Testing</a></li>
-                <li class="nav-item"><a id="TAB_Live" href="#live" class="nav-link" data-toggle="tab">Live</a></li>
+{#                <li class="nav-item"><a id="TAB_Live" href="#live" class="nav-link" data-toggle="tab">Live</a></li>#}
             </ul>
             <div id="my-tab-content" class="tab-content">
                 <!-- ROOMS TAB-->
@@ -99,7 +110,7 @@
                 </div>
                 <!-- POINTS TAB-->
                 <div class="tab-pane" id="points">
-                    <h4>Point to add new Pins</h4>
+                    <h4>Signal Points</h4>
 
                     <div style="margin: 20px 0;">
                         <button @click="togglePins()" class="btn btn-secondary">Toggle Pins</button>
@@ -134,7 +145,7 @@
                     <ul v-if="floorPlan.routes && floorPlan.routes.length>0" class="list-group" style="margin-top: 20px;">
                         <li v-for="(route,index) in floorPlan.routes" :key="index" :class="index==currentRoute? 'currentRoute': ''" class="list-group-item">
                             <b>[[index]] .</b>
-                            <span v-for="(point,i) in route" :key="i" :class="i==currentRoutePoint && index==currentRoute? 'currentPoint': ''"><b>[[i]]:</b> [[point]] </span>
+                            <span v-for="(point,i) in route" :key="i" :class="i==currentRoutePoint && index==currentRoute? 'currentPoint': ''"><b>&nbsp;[[i]]:</b> x:[[point.x]] y:[[point.y]] | [[point.direction]] &nbsp;</span>
 &nbsp;                           <button @click="deleteRoute(index)" class="close">&times;</button>
                         </li>
                     </ul>
@@ -159,6 +170,24 @@
                 <!-- TESTING TAB-->
                 <div class="tab-pane" id="testing">
                     <h4>Testing</h4>
+                    </br>
+                    <h6>Select Point Classifier</h6>
+                    <div class="form-group">
+                        <select class="form-control" id="select_point_algo" v-model="selectedPointAlgorithm" @change="changeSelectedPointAlgorithm(selectedPointAlgorithm)">
+                            <option v-for="(algo,i) in algorithms" :key="i">[[algo]]</option>
+                        </select>
+                    </div>
+                    <h6>Select Room Classifier</h6>
+                    <div class="form-group">
+                        <select class="form-control" id="select_room_algo" v-model="selectedRoomAlgorithm" @change="changeSelectedRoomAlgorithm(selectedRoomAlgorithm)">
+                            <option v-for="(algo,i) in algorithms" :key="i">[[algo]]</option>
+                        </select>
+                    </div>
+                    <div v-if="pins.length!=0">
+                        <button class="btn btn-primary" @click="showTestAllModal()" data-toggle="modal" data-target="">Test all points and Algos</button>
+                        <a class="btn btn-info" role="button" :href="'/' + floor_plan_id + /results/">Show Results</a>
+                    </div>
+                    </br>
                     <div v-for="(test_point, index) in test_points" :key="index" class="pointInfo" @click="changeSelectedTestPoint(test_point, index)" :class="selectedTestPoint==index? 'point-info-selected': ''"> <!---->
                             [[ index ]]. [[ test_point.x ]] [[ test_point.y ]] | [[ test_point.scans.length ]]
                     </div>
@@ -201,16 +230,39 @@
               </div>
             </div><!--end of new room modal-->
 
+
+            <!-- Test All Modal -->
+            <div class="modal fade" id="testAllModal" tabindex="-1" role="dialog" aria-labelledby="testAllModalLabel" aria-hidden="true" data-backdrop="static">
+                <div class="modal-dialog" role="document">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="exampleModalLabel">Results</h5>
+                            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+                        </div>
+                        <div class="modal-body">
+                            <p>[[ testAllModalText ]]</p>
+                            <div v-for="(algo,index) in algorithms" :key="index" :class="algo == currentAlgorithm? 'currentAlgorithm' : ''" style="padding: 5px;">
+                                [[ algo ]]
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </div> <!--END of vue app col-->
+
         <div class="col">
             <!--The image that is used in the canvas-->
-            <img id="imgForCanvas" width=600 alt="floor image"/>
+            <img id="imgForCanvas" alt="floor image"/>
             <img id="mapPinImage" class="mapPinImage" src="/static/images/pin.svg" width=10 height=18 alt="pin image">
             <img id="mapPinImageGreen" class="mapPinImage" src="/static/images/pin_green.svg" width=10 height=18 alt="pin image green">
             <img id="mapPinImageYellow" class="mapPinImage" src="/static/images/pin_yellow.svg" width=10 height=18 alt="pin image yellow">
             <canvas id="myCanvas" width="600" height="581">
             </canvas>
-            <p>canvas 600x581 px</p>
+{#            <p>canvas 600x581 px</p>#}
         </div>
     </div> <!--END of row-->
 
@@ -253,6 +305,11 @@
 
                 test_points: [],
                 selectedTestPoint: 0,
+                algorithms: [],
+                currentAlgorithm: '',
+                selectedRoomAlgorithm: 'knn',
+                selectedPointAlgorithm: 'knn',
+                testAllModalText: '',
 
                 newRoomName: '',
                 newRoomMessage: '',
@@ -267,6 +324,7 @@
                 this.getRadioMap();   // getting radio map dataframe
                 this.getBssids();     // getting unique bssids of radio map
                 this.getTestPoints(); // getting test points
+                this.getAlgorithms();
 
                 this.img = document.getElementById("imgForCanvas");
                 this.img.src = "/static/images/" + this.floor_plan_img + '/';
@@ -277,6 +335,8 @@
 
                 this.img.addEventListener('load', () => {
                     // using the FloorPlan class
+                    console.log(this.img.width)
+                    console.log(this.img.height)
                     let canvas = document.getElementById("myCanvas");
                     this.floorPlan = new FloorPlan(canvas, this.img, this.imgPin, this.imgPinGreen, this.imgPinYellow)
                     this.floorPlan.setRooms(this.rooms);
@@ -309,6 +369,10 @@
                         app.currentRoutePoint = data.data.point;
                         app.floorPlan.redrawAll();
                     }
+                    else if (data.message == "TEST_PROGRESS") {
+                        {#console.log(data.data);#}
+                        app.update_progress(data.data.algorithm);
+                    }
                     else if (data.message == "SCAN_FINISHED") {
                         {#let index = app.floorPlan.pins.length-1;#}
                         {#console.log('new pin index', index)#}
@@ -333,12 +397,45 @@
                 // -------------------------------------------------------------------------------  END Socket listeners --------------
             },
             methods: {
+                update_progress(algo) {
+                    this.currentAlgorithm = algo;
+                    console.log("current algo:", this.currentAlgorithm);
+                },
+                getAlgorithms() {
+                    axios.get('/localize/classification_algorithms/')
+                        .then(res => {
+                            this.algorithms = res.data;
+                            this.algo_progress = new Array(this.algorithms.length).fill(0);
+                        })
+                        .catch(err => {console.log(err)})
+                },
+                showTestAllModal() {
+                    $('#testAllModal').modal('show');
+                    this.testAllModalText = 'Testing all algorithms...';
+                    axios.get('/localize/test_all/'+this.floor_plan_id+"/")
+                        .then(res => {
+                            console.log(res.data);
+                        })
+                        .catch(err => {
+                            console.log(err);
+                        })
+                },
+                changeSelectedPointAlgorithm(algo) {
+                    {#console.log(event.target.value)#}
+                    console.log(algo)
+                },
+                changeSelectedRoomAlgorithm(algo) {
+                    {#console.log(event.target.value)#}
+                    console.log(algo)
+                },
+
                 getConnectedWS() {
                     let data = {
                         message: "GET_CONNECTED_WS"
                     }
                     this.ws.send(JSON.stringify(data))
                 },
+
                 deleteRoute(index) {
                     this.floorPlan.deleteRoute(index);
                 },
@@ -348,7 +445,6 @@
                     this.floorPlan.routePoints = [];
                     {#console.log(this.floorPlan.routes);#}
                 },
-
                 saveRoutes() {
                     let canvasWidth = this.floorPlan.canvas.width;
                     let canvasHeight = this.floorPlan.canvas.height;
@@ -447,7 +543,7 @@
                     console.log("getting unique bssids of radio map...")
                     axios.get("/"+this.floor_plan_id+"/bssids/")
                     .then(res => {
-                        {#console.log(res)#}
+                        console.log(res.data)
                         this.unique_bssids = res.data
                         this.changeSelectedBSSID(this.unique_bssids[0],0);
                     })
@@ -476,24 +572,35 @@
                 },
 
                 async changeSelectedTestPoint(test_point, index) {
+                    if (!this.selectedPointAlgorithm || !this.selectedRoomAlgorithm) {
+                        alert('Please select point and room classifiers!');
+                        return;
+                    }
                     this.selectedTestPoint = index;
                     // do knn for room and location
-                    var knns = []
+                    var point_preds = []
                     var rooms = []
                     for (let i=0; i<test_point.scans.length; i++) {
-                        let data = {
-                            networks: test_point.scans[i] // the scanned networks
-                        }
+
                         try {
+                            let data = {
+                                networks: test_point.scans[i], // the scanned networks
+                                algorithm: this.selectedRoomAlgorithm
+                            }
                             // find room
-                            let res = await axios.post("/localize/room_knn/", data)
+                            let res = await axios.post("/localize/room/"+this.floor_plan_id+"/", data)
                             let room = res.data.room_pred;
                             rooms.push(room);
 
+                            data = {
+                                networks: test_point.scans[i], // the scanned networks
+                                algorithm: this.selectedPointAlgorithm
+                            }
                             // find neighbors
-                            res = await axios.post("/localize/knn/", data)
-                            let neighbors = res.data;
-                            knns.push(neighbors);
+                            res = await axios.post("/localize/point/"+this.floor_plan_id+"/", data)
+                            let point_pred = res.data;
+                            {#console.log(point_pred)#}
+                            point_preds.push(point_pred);
                         } catch (err) {
                             console.log(err)
                         }
@@ -501,7 +608,7 @@
                     {#console.log(rooms)#}
                     {#console.log(knns)#}
                     // show results on map
-                    this.floorPlan.changeSelectedTestPoint(test_point, knns, rooms);
+                    this.floorPlan.changeSelectedTestPoint(test_point, point_preds, rooms);
                 },
 
                 changeSelectedBSSID(bssid, index) {

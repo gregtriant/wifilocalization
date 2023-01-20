@@ -2,6 +2,8 @@
 // a module to create a Floor Layout object
 
 export class FloorPlan {
+    showMousePos = false;
+
     evt;
     canvas;
     ctx;
@@ -56,6 +58,9 @@ export class FloorPlan {
 
     // for testing Mode
     testingMode = false;
+    selectedPoint = {};
+    predPoints = [];
+    predRooms = [];
 
 
     doNothing = false;
@@ -114,6 +119,7 @@ export class FloorPlan {
             this.addingRoomMode = false;
             this.fingerprintingMode = false;
             this.radioMapMode = false;
+            this.testingMode = false;
 
             this.showingRoutes = false;
             this.showingPins = true;
@@ -122,6 +128,7 @@ export class FloorPlan {
             this.addingRoomMode = true;
             this.fingerprintingMode = false;
             this.radioMapMode = false;
+            this.testingMode = false;
 
             this.showingRoutes = false;
             this.showingPins = false;
@@ -130,6 +137,7 @@ export class FloorPlan {
             this.addingRoomMode = false;
             this.fingerprintingMode = true;
             this.radioMapMode = false;
+            this.testingMode = false;
 
             this.showingRoutes = true;
             this.showingPins = false;
@@ -138,6 +146,7 @@ export class FloorPlan {
             this.addingRoomMode = false;
             this.fingerprintingMode = false;
             this.radioMapMode = true;
+            this.testingMode = false;
 
             this.showingRoutes = false;
             this.showingPins = false;
@@ -234,41 +243,45 @@ export class FloorPlan {
     }
 
     // ---------------------------------------------  Drawing -------------------------------------------------- //
-    changeSelectedTestPoint(test_point, knns, rooms) {
+    changeSelectedTestPoint(test_point, point_preds, rooms) {
 
-        console.log("Testing Point...:", test_point)
+        console.log("Testing Point...:", test_point.room, test_point.x, test_point.y)
         let realPoint = {
             x: test_point.x,
             y: test_point.y
         }
         realPoint = this.scalePoint(realPoint, this.canvas.width, this.canvas.height);
-        this.drawPoint(realPoint, 'black', 5)
 
+        this.selectedPoint = realPoint;
+        this.predPoints = point_preds;
+        this.predRooms = rooms;
+        this.drawTestResults();
+    }
+
+    drawTestResults() {
+        if (!this.selectedPoint.x || this.predRooms.length == 0 || this.predPoints.length == 0) return;
+
+        // clear old results
+        this.testingMode = false; // only the testing mode was true!
+        this.redrawAll();
+        this.testingMode = true;
+
+        this.drawPoint(this.selectedPoint, 'black', 5)
         // draw rooms
-        rooms.forEach((room,i) => {
+        this.predRooms.forEach((room,i) => {
             console.log(i, room)
-
         })
-        let colors = ['red', 'green', 'blue', 'yellow']
+        let colors = ['red', 'green', 'blue', 'yellow', 'orange']
         // draw knns
-        knns.forEach((knn_points, i) => {
-            // console.log(i, ':')
+        this.predPoints.forEach((point, i) => {
             let color = colors[i]
             let p = {
-                x: knn_points[0].x,
-                y: knn_points[0].y
+                x: point.x,
+                y: point.y
             }
             p = this.scalePoint(p, this.canvas.width, this.canvas.height)
+            console.log(i, point.room, p)
             this.drawPoint(p, color, 2)
-            // knn_points.forEach((knn, j) => {
-            //     console.log(i,j,knn.x,knn.y)
-            //     let p = {
-            //         x: knn.x,
-            //         y: knn.y
-            //     }
-            //     p = this.scalePoint(p, this.canvas.width, this.canvas.height)
-            //     this.drawPoint(p, color)
-            // })
         })
     }
 
@@ -415,26 +428,30 @@ export class FloorPlan {
     }
 
     redrawAll(evt) {
-        // console.log("redrawong all!!")
-        // redraw image
-        this.ctx.drawImage(this.img, 0, 0, this.canvas.width, this.canvas.height);
+        if (this.testingMode && this.predPoints.length!=0 && this.predRooms.length!==0) return;
+        let new_img_width = this.canvas.width;
+        let ratio = 600/this.img.width;
+        let new_img_height = ratio * this.img.height
+        this.ctx.drawImage(this.img, 0, 0, new_img_width, new_img_height);
         if (this.showingRoutes) this.drawAllRoutes();
         if (this.showingRooms) this.drawAllRooms();
         if (this.showingPins) this.drawAllPins();
         if (this.radioMapMode) this.drawRadioMapForBSSID();
+
+
         if (evt) this.drawMouseCoordinates(evt);
 
         if (evt) {
             let mousePos = this.getMousePos(this.canvas, evt)
             if (this.addingPinMode) {
-                if (this.pinIsMoving && !this.doNothing) { // draw the pin where the mouse points
-                    this.ctx.drawImage(this.imgPinGreen, mousePos.x - this.imgPinGreen.width/2 +1, mousePos.y - this.imgPinGreen.height, this.imgPinGreen.width, this.imgPinGreen.height); //and then draw the pin image on top
-                } else {
-                    // pin is not moving
-                    if (this.newPin.x) { // if we have a new pin
-                        this.ctx.drawImage(this.imgPinGreen, this.newPin.x - this.imgPinGreen.width/2 +1, this.newPin.y - this.imgPinGreen.height, this.imgPinGreen.width, this.imgPinGreen.height); //and then draw the pin image on top
-                    }
-                }
+                // if (this.pinIsMoving && !this.doNothing) { // draw the pin where the mouse points
+                //     this.ctx.drawImage(this.imgPinGreen, mousePos.x - this.imgPinGreen.width/2 +1, mousePos.y - this.imgPinGreen.height, this.imgPinGreen.width, this.imgPinGreen.height); //and then draw the pin image on top
+                // } else {
+                //     // pin is not moving
+                //     if (this.newPin.x) { // if we have a new pin
+                //         this.ctx.drawImage(this.imgPinGreen, this.newPin.x - this.imgPinGreen.width/2 +1, this.newPin.y - this.imgPinGreen.height, this.imgPinGreen.width, this.imgPinGreen.height); //and then draw the pin image on top
+                //     }
+                // }
 
             } else if (this.addingRoomMode) {
                 let newRect = this.pointsToRect(mousePos.x, mousePos.y, this.startPoint.x, this.startPoint.y)
@@ -507,6 +524,8 @@ export class FloorPlan {
                 this.ctx.moveTo(prevPoint.x, prevPoint.y);
                 this.ctx.lineTo(this.nextRoutePoint.x, this.nextRoutePoint.y)
                 this.ctx.stroke();
+            } else if (this.testingMode) {
+                // nothing to be done
             }
         }
     }
@@ -534,6 +553,7 @@ export class FloorPlan {
     }
 
     drawMouseCoordinates(evt) {
+        if (!this.showMousePos) return;
         let mousePos = this.getMousePos(this.canvas, evt);
         let message = 'pos: ' + Math.floor(mousePos.x) + ',' + Math.floor(mousePos.y);
         this.ctx.clearRect(515, 565, this.canvas.width, this.canvas.height);

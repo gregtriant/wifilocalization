@@ -2,12 +2,59 @@ import json
 import requests
 import math
 import pandas as pd
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
+from sklearn.gaussian_process import GaussianProcessClassifier
+from sklearn.gaussian_process.kernels import RBF
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neural_network import MLPClassifier
+from sklearn.svm import SVC
+from sklearn.tree import DecisionTreeClassifier
+
 from .wifi_radiomap import SignalPoint, RadioMap
 
 from sklearn.neighbors import KNeighborsClassifier
 
 
 class Localization:
+    names_of_classifiers = [
+        "knn",
+        "wknn",
+        "linear_svm",
+        "svm",
+        # "gaussian",
+        "decision_tree",
+        "random_forest",
+        "MLP",
+        "adaboost",
+        "naive_bayes",
+    ]
+
+    point_classifiers = [
+        KNeighborsClassifier(n_neighbors=3),
+        KNeighborsClassifier(n_neighbors=3, weights='distance'),
+        SVC(kernel="linear", C=0.025),
+        SVC(gamma=2, C=1),
+        # GaussianProcessClassifier(1.0 * RBF(1.0)),
+        DecisionTreeClassifier(max_depth=5),
+        RandomForestClassifier(max_depth=5, n_estimators=10, max_features=1),
+        MLPClassifier(alpha=1, max_iter=2000),
+        AdaBoostClassifier(),
+        GaussianNB(),
+    ]
+
+    room_classifiers = [
+        KNeighborsClassifier(n_neighbors=3),
+        KNeighborsClassifier(n_neighbors=3, weights='distance'),
+        SVC(kernel="linear", C=0.025),
+        SVC(gamma=2, C=1),
+        # GaussianProcessClassifier(1.0 * RBF(1.0)),
+        DecisionTreeClassifier(max_depth=5),
+        RandomForestClassifier(max_depth=5, n_estimators=10, max_features=1),
+        MLPClassifier(alpha=1, max_iter=2000),
+        AdaBoostClassifier(),
+        GaussianNB(),
+    ]
+
     test_point = [{'BSSID': '78:96:82:3a:9d:c8', 'level': -42},
                   {'BSSID': '28:ff:3e:03:76:dc', 'level': -62},
                   {'BSSID': '62:ff:3e:03:76:dd', 'level': -65},
@@ -23,112 +70,67 @@ class Localization:
 
     def __init__(self, radio_map):
         self.radio_map = radio_map
+        self.make_room_classifiers()
+        self.make_point_classifiers()
 
-    def find_room_knn(self, scanned_networks):
-        x_train = self.radio_map.df_dataset.iloc[:, 3:]
+    def make_point_classifiers(self):
+        # ['knn', 'linear_svm', 'svm', 'gaussian', 'naive_bayes', 'decision_tree', 'random_forest', 'MLP', 'adaboost'] # available algorithms
+        print("Making point classifiers...")
+        x_train = self.radio_map.df_dataset.iloc[:, 3:len(self.radio_map.unique_bssids_of_floor_plan) + 3:1]
+        df = self.radio_map.df_dataset
+        df['point'] = range(0, len(df))  # adding a column to be used as the point class. It is essentially just the index of each point
+        # print(df)
+        y_train = self.radio_map.df_dataset['point']
+        if x_train.empty or y_train.empty:
+            return
+        # train the classifiers
+        for name, clf in zip(self.names_of_classifiers, self.point_classifiers):
+            clf.fit(x_train, y_train)
+
+    def make_room_classifiers(self):
+        print("Making room classifiers...")
+        x_train = self.radio_map.df_dataset.iloc[:, 3:len(self.radio_map.unique_bssids_of_floor_plan) + 3:1]
         y_train = self.radio_map.df_dataset.iloc[:, 0]
-        # print(self.radio_map.df_dataset.head())
+        if x_train.empty or y_train.empty:
+            return
+        # train the classifiers
+        for name, clf in zip(self.names_of_classifiers, self.room_classifiers):
+            clf.fit(x_train, y_train)
 
-        # make the classifiers
-        knn3 = KNeighborsClassifier(n_neighbors=3)
-        knn3.fit(x_train, y_train)
+    def find_point(self, scanned_networks, algorithm):
+        df_test = self.networks_to_df(scanned_networks)
+        for name, clf in zip(self.names_of_classifiers, self.point_classifiers):
+            if name == algorithm:
+                y_pred = clf.predict(df_test)
+                # print("Point prediction:", y_pred)
+                df_row_result = self.radio_map.df_dataset.iloc[y_pred, 0:3:1]  # get just room and pointx, pointy columns of df
+                result = {
+                    'room': df_row_result['room'].iat[0],
+                    'x': df_row_result['pointX'].iat[0],
+                    'y': df_row_result['pointY'].iat[0]
+                }
+                return result
 
+        return 'Algorith not supported'
+
+
+    def find_room(self, scanned_networks, algorithm):
+        df_test = self.networks_to_df(scanned_networks)
+        for name, clf in zip(self.names_of_classifiers, self.room_classifiers):
+            if name == algorithm:
+                y_pred = clf.predict(df_test)
+                return y_pred
+
+        return 'algorithm not supported'
+
+
+    def networks_to_df(self, scanned_networks):
         networks = list(map(lambda net: (net["BSSID"], net["level"]), scanned_networks))
         networks = sorted(networks, key=lambda x: -x[1])
+        networks = self.organize_rssi_of_new_point(networks, self.radio_map.unique_bssids_of_floor_plan)  # add the rest of the bssids that are unique to the radio map
+        df_test = self.convert_networks_to_df(networks, self.radio_map.unique_bssids_of_floor_plan)  # convert to dataframe
+        return df_test
 
-        networks = self.organize_rssi_of_new_point(networks, self.radio_map.unique_bssids_of_floor_plan)
-        # networks_bssids = [x[0] for x in networks]
-
-        df_test = self.convert_networks_to_df(networks, self.radio_map.unique_bssids_of_floor_plan)
-        y_pred_knn3 = knn3.predict(df_test)
-        print("Room prediction:", y_pred_knn3)
-        return y_pred_knn3
-
-    def knn(self, signal_points, test_point=None, k=4):
-        print(' --> Localization with knn!')
-
-        # we will use there to calc the distances
-        # unique_bssids = self.find_unique_bssids(signal_points)
-        # print("Found " + str(len(unique_bssids)) + " unique bssids: ",  unique_bssids)
-
-        if test_point is None:
-            test_point = self.test_point
-
-        knns = []
-
-        # - find the min Number of coordinates to be used
-        # lets say that it is the number of coords of the test_point
-        for index, signal_point in enumerate(signal_points):
-            # print(index, signal_point["networks"])
-            dist = self.calc_dist(test_point, signal_point)
-            # print("dist:", dist)
-            # save to neighbors
-            new_neighbor = {"x": signal_point["x"], "y": signal_point["y"], "dist": dist}
-            knns.append(new_neighbor)
-
-        knns = sorted(knns, key=lambda d: d['dist'])
-        # print("neighbors SORTED:", knns)
-        # print(knns[0:k:1])
-        return knns[0:k:1]
-
-    def calc_dist(self, test_point, signal_point):
-        dist = 0
-        test_point = sorted(test_point, key=lambda network: network['level']) # reverse=True
-        # print("\n\nTest POint:", test_point)
-        networks_of_signal_point = json.loads(signal_point["networks"])
-        # print("\n\n", test_point)
-        # print("\n\n", networks_of_signal_point)
-        networks_of_signal_point = list(map(lambda point: {"BSSID": point["BSSID"], "level": point["level"]}, networks_of_signal_point))
-        networks_of_signal_point = sorted(networks_of_signal_point, key=lambda network: network['level']) # reverse=True
-        # print("\nSignal POint:", networks_of_signal_point)
-        # print(networks_of_signal_point)
-        # find all the unique bssids in order to calc the distance
-        unique_bssids = self.find_unique_bssids(test_point + networks_of_signal_point)
-        # print("Found " + str(len(unique_bssids)) + " unique bssids: ",  unique_bssids)
-
-        for bssid in unique_bssids:
-            pos1 = -1
-            pos2 = -1
-            for index, TP_network in enumerate(test_point):  # check if this network exists in Test Point
-                # print(TP_network)
-                if bssid == TP_network["BSSID"]:
-                    pos1 = index
-            for SP_network in networks_of_signal_point:  # check if this network exists in Signal Point
-                # print(SP_network)
-                if bssid == SP_network["BSSID"]:
-                    pos1 = index
-
-            if pos1 != -1 and pos2 != -1:
-                dist += (test_point[pos1]["level"] - networks_of_signal_point[pos2]["level"]) * (test_point[pos1]["level"] - networks_of_signal_point[pos2]["level"])
-            elif pos1 != -1 and pos2 == -1:
-                # dist += (test_point[pos1]["level"] - (-100)) * (test_point[pos1]["level"] - (-100))
-                dist += test_point[pos1]["level"] * test_point[pos1]["level"]
-            elif pos1 == -1 and pos2 != -1:
-                # dist += (networks_of_signal_point[pos2]["level"] - (-100)) * (networks_of_signal_point[pos2]["level"] - (-100))
-                dist += networks_of_signal_point[pos2]["level"] * networks_of_signal_point[pos2]["level"]
-
-        return math.sqrt(dist)
-
-    def find_unique_bssids(self, network_list):
-        # print(json.loads(signal_points[0]['networks'])[0])
-        unique_networks = []
-        for network in network_list:
-            # print(network['BSSID'])
-            if network['BSSID'] not in unique_networks and network['level'] > -90:
-                unique_networks.append(network['BSSID'])
-        return unique_networks
-
-    def dbm_to_quality(self, dbm):
-        # where dBm: [-100 to - 50]
-        quality = 0
-        if dbm <= -100:
-            quality = 0
-        elif dbm >= -50:
-            quality = 100
-        else:
-            quality = 2 * (dbm + 100)
-
-        return quality
 
     def organize_rssi_of_new_point(self, scanned_networks, unique_bssids_of_floor_plan):
         # print(len(networks), networks)
@@ -175,3 +177,22 @@ class Localization:
         # print(new_df_row)
         df_test = pd.concat([df_test, pd.DataFrame.from_dict(new_df_row)], ignore_index=True, axis=0)
         return df_test
+
+
+# OLD KNN with actual dist
+    # def knn(self, signal_points, test_point=None, k=4):
+# neighbors = []
+
+# for index, sp in enumerate(self.radio_map.signal_points):
+#     # print(index)
+#     dist = 0
+#     for net in sp.fingerprint:
+#         bssid = net[0]
+#         mean_rssi = net[2]
+#         dist += (mean_rssi - df_test[bssid].iat[0]) * (mean_rssi - df_test[bssid].iat[0])
+#
+#     new_neighbor = {"x": sp.x, "y": sp.y, "dist": dist}
+#     neighbors.append(new_neighbor)
+#
+# neighbors = sorted(neighbors, key=lambda d: d['dist'])
+# return neighbors[0:3:1]

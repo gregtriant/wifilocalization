@@ -75,6 +75,7 @@ for unique_net in unique_bssids:
                 signal_strengths.append((index, network['level']))
 
     freq = len(signal_strengths) / len(signal_point.scans)  # number of times this bssid appeared during the 40 scans
+
     print(bssid, ssid, ' freq:', "{:6.4f}".format(freq), signal_strengths)
     if freq >= 0.7:
         chosen_ssids.append(ssid)

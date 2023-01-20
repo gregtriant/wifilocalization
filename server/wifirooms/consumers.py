@@ -64,6 +64,12 @@ class BrowserConsumer(AsyncWebsocketConsumer):
         }
         await self.send(json.dumps(data))
 
+    async def test_progress(self, event):
+        data = {
+            "message": "TEST_PROGRESS",
+            "data": event["data"]
+        }
+        await self.send(json.dumps(data))
     # @database_sync_to_async
     # def get_signal_points(self):
     #     return SignalPoint.objects.all()
