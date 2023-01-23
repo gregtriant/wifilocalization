@@ -35,7 +35,9 @@
                 message: 'Hello from vue',
                 results: [],
                 floorplanid: '',
-                routes: []
+                routes: [],
+
+                results_url: "/localize/localization_results/1/?limit=first" //?limit=second
             },
             async created() {
                 console.log('host: ', window.location.host)
@@ -52,7 +54,7 @@
             methods: {
                 async getResults() {
                     try {
-                        const res = await axios.get("/localize/localization_results/1/")
+                        const res = await axios.get(this.results_url)
                         {#console.log(res.data)#}
                         this.results = res.data;
                     } catch(e) {
@@ -120,10 +122,10 @@
                     let data = {Accel, Magnet, Gyro};
 
                     for (const [key1, value1] of Object.entries(data)) {
-                        console.log(`${key1}: ${value1}`);
+                        {#console.log(`${key1}: ${value1}`);#}
                         let traces = []
                         for (const [key, value] of Object.entries(value1)) {
-                            console.log(`${key}: ${value}`);
+                            {#console.log(`${key}: ${value}`);#}
                             let new_trace = {
                                 x: times,
                                 y: value,
@@ -289,7 +291,7 @@
                     let human2MeanDist = [];
 
                     let big_plot_data = []
-
+                    let max_avarages = []
                     for (let i=0; i<this.results.length; i++) {
                         let data = this.results[i];
                         let avgDistOfPoints = data.avg_dist_of_points;
@@ -301,6 +303,9 @@
                             mode: 'markers',
                             type: 'scatter'
                         };
+                        {#console.log(data.algorithm, Math.max(...avgDistOfPoints))#}
+                        max_avarages.push(Math.max(...avgDistOfPoints)) // we need this to paint the route shapes in the graph
+
                         big_plot_data.push(new_trace);
 
                         algos.push(data.algorithm);
@@ -314,6 +319,8 @@
                         human1MeanDist.push(data.human1_mean_dist_in_meters.toFixed(2));
                         human2MeanDist.push(data.human2_mean_dist_in_meters.toFixed(2));
                     }
+
+                    let max_avg_dist = Math.max(...max_avarages)
 
                     const newDiv1 = document.createElement("div");
                     newDiv1.id = 'big_plot';
@@ -337,7 +344,7 @@
                         traceText.text.push(text);
                         traceText.x.push(prevLineIndex + 3);
 
-                        traceText.y.push(i%2 == 0? 640: 610);
+                        traceText.y.push(i%2 == 0? 1.1*max_avg_dist: 1*max_avg_dist);
                         let newShape = {
                             type: 'rect',
                             // x-reference is assigned to the x-values
@@ -347,7 +354,7 @@
                             x0: prevLineIndex,
                             y0: 0,
                             x1: prevLineIndex + points.length,
-                            y1: 630,
+                            y1: 1.05* max_avg_dist,
                             fillcolor: color,
                             opacity: 0.3,
                             line: {

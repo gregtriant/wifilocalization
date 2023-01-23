@@ -22,8 +22,14 @@ radio_maps = []
 localizers = []
 
 for floor_plan in floor_plans:
-    if floor_plan.id == 2:
-        break
+    routes = serializers.serialize("json", Route.objects.filter(FloorPlan_id=floor_plan.id))
+    routes = json.loads(routes)
+    # print(routes)
+    if len(routes) == 0:
+        print("--> Views.py... Can't make Radio map for FloorPlan:", floor_plan.name, " No routes found...\n")
+        continue
+
+    print(floor_plan.routes)
     print("--> Views.py... Making Radio map for FloorPlan:", floor_plan.name, "...")
     start = time.time()
     data = serializers.serialize("json", SignalPoint.objects.filter(FloorPlan_id=floor_plan.id))
@@ -37,7 +43,7 @@ for floor_plan in floor_plans:
     for room in data:
         rooms.append(room['fields'])
     rm = None
-    rm = RadioMap(points, rooms)
+    rm = RadioMap(points, rooms, limit_scans='first', take_average=True)
     rm.make_radio_map()
     end = time.time()
     rm_data = {
@@ -47,16 +53,16 @@ for floor_plan in floor_plans:
     radio_maps.append(rm_data)
     print("--> Views.py... Done! -- time:", end - start, "\n")
 
-    # print("--> Views.py... Making Localizers for FloorPlan:", floor_plan.name, "...")
-    # start = time.time()
-    # localizer = Localization(rm)
-    # end = time.time()
-    # localizer_data = {
-    #     "floor_plan_id": floor_plan.id,
-    #     "localizer": localizer
-    # }
-    # localizers.append(localizer_data)
-    # print("--> Views.py... Done! -- time:", end - start, "\n")
+    print("--> Views.py... Making Localizers for FloorPlan:", floor_plan.name, "...")
+    start = time.time()
+    localizer = Localization(rm)
+    end = time.time()
+    localizer_data = {
+        "floor_plan_id": floor_plan.id,
+        "localizer": localizer
+    }
+    localizers.append(localizer_data)
+    print("--> Views.py... Done! -- time:", end - start, "\n")
     del rm
 
 
@@ -68,8 +74,6 @@ def index(request):
 
 @csrf_exempt
 def results(request, floor_plan_id):
-    # floor_plans = FloorPlan.objects.order_by('-pub_date')
-    # context = {'floor_plans': floor_plans}
     return render(request, 'wifirooms/results.html')
 
 @csrf_exempt
@@ -136,8 +140,8 @@ def all_scans(request, floor_plan_id, point_index):
         if rm["floor_plan_id"] == floor_plan_id:
             for index, sp in enumerate(rm["radio_map"].signal_points):
                 if index == point_index:
-                    print(index, sp.scans)
-            return HttpResponse(json.dumps(sp.scans))
+                    # print(index, sp.scans)
+                    return HttpResponse(json.dumps(sp.scans))
 
 def dbm_to_percent(dbm):
     quality = 0
@@ -149,6 +153,34 @@ def dbm_to_percent(dbm):
         quality = 2 * (dbm + 100)
     return quality
 
+class Results:
+    def __init__(self):
+        self.dists = []
+        self.avg_error_at_each_point = []
+        self.correct_room_preds = 0
+        self.total_room_preds = 0
+
+    def calc_results(self, scans, localizer, algo, real_room, real_x, real_y):
+        width = 600
+        height = 581
+        avg_error_dist = 0
+        for scan in scans:  # 5 scans for each point
+            pred_point = localizer.find_point(scan, algo)
+            pred_room = localizer.find_room(scan, algo)[0]
+
+            self.total_room_preds += 1
+            if pred_room == real_room:
+                self.correct_room_preds += 1
+
+            error_dist = math.sqrt(((real_x * width - pred_point["x"] * width) * (real_x * width - pred_point["x"] * width)) + (
+                        (real_y * height - pred_point["y"] * height) * (real_y * height - pred_point["y"] * height)))
+
+            avg_error_dist += error_dist
+            self.dists.append(error_dist)
+
+        avg_error_dist = avg_error_dist / len(scans)
+        self.avg_error_at_each_point.append(avg_error_dist)
+
 @csrf_exempt
 def localize_test_all(request, floor_plan_id):
     localizer = None
@@ -158,15 +190,14 @@ def localize_test_all(request, floor_plan_id):
             break
     print("Testing all algorithms!")
     start = time.time()
-    test_pts = findTestPoints(1)
+    test_pts = findTestPoints(floor_plan_id)
     # print(test_pts)
-    width = 600
-    height = 581
+
     response_data = []
     for i, algo in enumerate(localizer.names_of_classifiers): # 8-10 classifiers
         # send progress to client
-        # if i == 1:
-        #     break
+        if i != 1 and i != 2 and i != 8:
+            continue
 
         algo_data = {
             "algorithm": algo,
@@ -179,130 +210,59 @@ def localize_test_all(request, floor_plan_id):
             "type": "test.progress",
             "data": algo_data
         })
-        dists = []
-        avg_dist_of_points = []
-        correct_room_preds = 0
-        total_room_preds = 0
 
-        robot_dists = []
-        robot_avg_dist_of_points = []
-        robot_correct_room_preds = 0
-        robot_total_room_preds = 0
-
-        human1_dists = []
-        human1_avg_dist_of_points = []
-        human1_correct_room_preds = 0
-        human1_total_room_preds = 0
-
-        human2_dists = []
-        human2_avg_dist_of_points = []
-        human2_correct_room_preds = 0
-        human2_total_room_preds = 0
+        all_results = Results()
+        robot_results = Results()
+        human1_results = Results()
+        human2_results = Results()
 
         for j, tp in enumerate(test_pts): # 129 points
+            print("algo:", i, "/", len(localizer.names_of_classifiers), "point:", j, "/", len(test_pts))
             x = tp["x"]
             y = tp["y"]
             room = tp["room"]
             scans = tp["scans"]
 
+            all_scans = scans[-14:]
             robot_scans = scans[-14:-9]
             human_scans = scans[-9:-4]
             rotating_human_scans = scans[-4:]
 
+            # print(len(all_scans))
             # print(len(robot_scans))
             # print(len(human_scans))
             # print(len(rotating_human_scans))
-            avg_dist = 0
-            robot_avg_dist = 0
-            human1_avg_dist = 0
-            human2_avg_dist = 0
-            for scan in robot_scans: # 5 scans for each point
-                pred_point = localizer.find_point(scan, algo)
-                pred_room = localizer.find_room(scan, algo)[0]
 
-                total_room_preds += 1
-                robot_total_room_preds += 1
-                if pred_room == room:
-                    robot_correct_room_preds += 1
-                    correct_room_preds += 1
+            all_results.calc_results(all_scans, localizer, algo, room, x, y)
+            robot_results.calc_results(robot_scans, localizer, algo, room, x, y)
+            human1_results.calc_results(human_scans, localizer, algo, room, x, y)
+            human2_results.calc_results(rotating_human_scans, localizer, algo, room, x, y)
 
-                dist = math.sqrt(((x*width - pred_point["x"]*width) * (x*width - pred_point["x"]*width)) + ((y*height - pred_point["y"]*height) * (y*height - pred_point["y"]*height)))
-                # print(dist)
-                avg_dist += dist
-                robot_avg_dist += dist
-                dists.append(dist)
-                robot_dists.append(dist)
-
-            for scan in human_scans:  # 5 scans for each point
-                pred_point = localizer.find_point(scan, algo)
-                pred_room = localizer.find_room(scan, algo)[0]
-
-                total_room_preds += 1
-                human1_total_room_preds += 1
-                if pred_room == room:
-                    human1_correct_room_preds += 1
-                    correct_room_preds += 1
-
-                dist = math.sqrt(((x * width - pred_point["x"] * width) * (x * width - pred_point["x"] * width)) + (
-                            (y * height - pred_point["y"] * height) * (y * height - pred_point["y"] * height)))
-                # print(dist)
-                avg_dist += dist
-                human1_avg_dist += dist
-                dists.append(dist)
-                human1_dists.append(dist)
-
-            for scan in rotating_human_scans:  # 4 scans for each point
-                pred_point = localizer.find_point(scan, algo)
-                pred_room = localizer.find_room(scan, algo)[0]
-
-                total_room_preds += 1
-                human2_total_room_preds += 1
-                if pred_room == room:
-                    human2_correct_room_preds += 1
-                    correct_room_preds += 1
-
-                dist = math.sqrt(((x * width - pred_point["x"] * width) * (x * width - pred_point["x"] * width)) + (
-                        (y * height - pred_point["y"] * height) * (y * height - pred_point["y"] * height)))
-                # print(dist)
-                avg_dist += dist
-                human2_avg_dist += dist
-                dists.append(dist)
-                human2_dists.append(dist)
-
-            robot_avg_dist /=5
-            robot_avg_dist_of_points.append(robot_avg_dist)
-            human1_avg_dist /= 5
-            human1_avg_dist_of_points.append(human1_avg_dist)
-            human2_avg_dist /= 4
-            human2_avg_dist_of_points.append(human2_avg_dist)
-            avg_dist /= 14
-            avg_dist_of_points.append(avg_dist)
-
-        room_pred_accuracy = correct_room_preds/total_room_preds
+        room_pred_accuracy = all_results.correct_room_preds/all_results.total_room_preds
         print("total room acc:", room_pred_accuracy)
-        robot_room_pred_acc = robot_correct_room_preds/robot_total_room_preds
+        robot_room_pred_acc = robot_results.correct_room_preds/robot_results.total_room_preds
         print("Robot room acc:", robot_room_pred_acc)
-        human1_room_pred_acc = human1_correct_room_preds / human1_total_room_preds
+        human1_room_pred_acc = human1_results.correct_room_preds/human1_results.total_room_preds
         print("Human room acc:", human1_room_pred_acc)
-        human2_room_pred_acc = human2_correct_room_preds / human2_total_room_preds
+        human2_room_pred_acc = human2_results.correct_room_preds/human2_results.total_room_preds
         print("Rotating human room acc:", human2_room_pred_acc, '\n')
 
-        mean_dist = np.mean(dists)
+        mean_dist = np.mean(all_results.dists)
         mean_dist_in_meters = mean_dist / 60 # 30 pixels = 0.5m => 60 pixels = 1m
         print("total mean dist:", mean_dist, 'px')
         print("total mean dist:", mean_dist_in_meters, 'm')
 
-        robot_mean_dist = np.mean(robot_dists)
+        robot_mean_dist = np.mean(robot_results.dists)
         robot_mean_dist_in_meters = robot_mean_dist / 60  # 30 pixels = 0.5m => 60 pixels = 1m
         print("Robot mean dist:", robot_mean_dist, 'px')
         print("Robot mean dist:", robot_mean_dist_in_meters, 'm')
 
-        human1_mean_dist = np.mean(robot_dists)
+        human1_mean_dist = np.mean(human1_results.dists)
         human1_mean_dist_in_meters = human1_mean_dist / 60  # 30 pixels = 0.5m => 60 pixels = 1m
         print("Human mean dist:", human1_mean_dist, 'px')
         print("Human mean dist:", human1_mean_dist_in_meters, 'm')
 
-        human2_mean_dist = np.mean(robot_dists)
+        human2_mean_dist = np.mean(human2_results.dists)
         human2_mean_dist_in_meters = human2_mean_dist / 60  # 30 pixels = 0.5m => 60 pixels = 1m
         print("Rotating human mean dist:", human2_mean_dist, 'px')
         print("Rotating human mean dist:", human2_mean_dist_in_meters, 'm')
@@ -321,7 +281,8 @@ def localize_test_all(request, floor_plan_id):
         algo_data["human2_mean_dist"] = human2_mean_dist
         algo_data["human2_mean_dist_in_meters"] = human2_mean_dist_in_meters
 
-        algo_data["avg_dist_of_points"] = avg_dist_of_points
+        algo_data["avg_dist_of_points"] =  [(x/60) for x in all_results.avg_error_at_each_point]
+
         # print(robot_avg_dist_of_points)
         # print(human1_avg_dist_of_points)
         # print(human2_avg_dist_of_points)
@@ -338,7 +299,17 @@ def localize_test_all(request, floor_plan_id):
 
 @csrf_exempt
 def localization_results(request, floor_plan_id):
-    with open('results_' + str(floor_plan_id) + '.json') as f:
+    limit = request.GET.get('limit')
+    filename = 'results_' + str(floor_plan_id)
+    if limit == 'first':
+        filename += '_first'
+    elif limit == 'second':
+        filename += '_second'
+    elif limit == 'all':
+        filename += '_all'
+
+    filename += '.json'
+    with open(filename) as f:
         data = json.load(f)
         return HttpResponse(data)
 
@@ -380,6 +351,7 @@ def localize_point(request, floor_plan_id):
     start = time.time()
     pred_point = {}
     localizer = None
+    algorithm = ""
     for local in localizers:
         if local["floor_plan_id"] == floor_plan_id:
             localizer = local["localizer"]
@@ -402,7 +374,7 @@ def localize_point(request, floor_plan_id):
         pred_point = localizer.find_point(test_point, algorithm)
 
     end = time.time()
-    print("Found point_pred: ", pred_point, " - time:", end-start)
+    print("Algo:", algorithm, "Found point_pred: ", pred_point, " - time:", end-start)
     return HttpResponse(json.dumps(pred_point))
 
 

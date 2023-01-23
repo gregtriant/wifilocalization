@@ -1,10 +1,5 @@
-import json
-import requests
-import math
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
-from sklearn.gaussian_process import GaussianProcessClassifier
-from sklearn.gaussian_process.kernels import RBF
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neural_network import MLPClassifier
 from sklearn.svm import SVC
@@ -19,40 +14,37 @@ class Localization:
     names_of_classifiers = [
         "knn",
         "wknn",
-        "linear_svm",
+        # "linear_svm",
         "svm",
-        # "gaussian",
         "decision_tree",
         "random_forest",
         "MLP",
         "adaboost",
-        "naive_bayes",
+        # "naive_bayes",
     ]
 
     point_classifiers = [
         KNeighborsClassifier(n_neighbors=3),
-        KNeighborsClassifier(n_neighbors=3, weights='distance'),
-        SVC(kernel="linear", C=0.025),
+        KNeighborsClassifier(n_neighbors=5, weights='distance'),
+        # SVC(kernel="linear", C=0.025),
         SVC(gamma=2, C=1),
-        # GaussianProcessClassifier(1.0 * RBF(1.0)),
         DecisionTreeClassifier(max_depth=5),
         RandomForestClassifier(max_depth=5, n_estimators=10, max_features=1),
         MLPClassifier(alpha=1, max_iter=2000),
         AdaBoostClassifier(),
-        GaussianNB(),
+        # GaussianNB(),
     ]
 
     room_classifiers = [
         KNeighborsClassifier(n_neighbors=3),
         KNeighborsClassifier(n_neighbors=3, weights='distance'),
-        SVC(kernel="linear", C=0.025),
+        # SVC(kernel="linear", C=0.025),
         SVC(gamma=2, C=1),
-        # GaussianProcessClassifier(1.0 * RBF(1.0)),
         DecisionTreeClassifier(max_depth=5),
         RandomForestClassifier(max_depth=5, n_estimators=10, max_features=1),
         MLPClassifier(alpha=1, max_iter=2000),
         AdaBoostClassifier(),
-        GaussianNB(),
+        # GaussianNB(),
     ]
 
     test_point = [{'BSSID': '78:96:82:3a:9d:c8', 'level': -42},
@@ -76,10 +68,7 @@ class Localization:
     def make_point_classifiers(self):
         # ['knn', 'linear_svm', 'svm', 'gaussian', 'naive_bayes', 'decision_tree', 'random_forest', 'MLP', 'adaboost'] # available algorithms
         print("Making point classifiers...")
-        x_train = self.radio_map.df_dataset.iloc[:, 3:len(self.radio_map.unique_bssids_of_floor_plan) + 3:1]
-        df = self.radio_map.df_dataset
-        df['point'] = range(0, len(df))  # adding a column to be used as the point class. It is essentially just the index of each point
-        # print(df)
+        x_train = self.radio_map.df_dataset.iloc[:, 4:len(self.radio_map.unique_bssids_of_floor_plan) + 4:1]
         y_train = self.radio_map.df_dataset['point']
         if x_train.empty or y_train.empty:
             return
@@ -89,8 +78,8 @@ class Localization:
 
     def make_room_classifiers(self):
         print("Making room classifiers...")
-        x_train = self.radio_map.df_dataset.iloc[:, 3:len(self.radio_map.unique_bssids_of_floor_plan) + 3:1]
-        y_train = self.radio_map.df_dataset.iloc[:, 0]
+        x_train = self.radio_map.df_dataset.iloc[:, 4:len(self.radio_map.unique_bssids_of_floor_plan) + 4:1]
+        y_train = self.radio_map.df_dataset['room'] # the room column
         if x_train.empty or y_train.empty:
             return
         # train the classifiers
@@ -100,11 +89,16 @@ class Localization:
     def find_point(self, scanned_networks, algorithm):
         df_test = self.networks_to_df(scanned_networks)
         for name, clf in zip(self.names_of_classifiers, self.point_classifiers):
+            print(name, algorithm)
             if name == algorithm:
                 y_pred = clf.predict(df_test)
-                # print("Point prediction:", y_pred)
-                df_row_result = self.radio_map.df_dataset.iloc[y_pred, 0:3:1]  # get just room and pointx, pointy columns of df
+                print("Point prediction:", int(y_pred[0]))
+                df = self.radio_map.df_dataset
+                df_row_result = df.loc[df['point'] == y_pred[0]]  # get just room and pointx, pointy columns of df
+                print("result length:", len(df_row_result))
+                print(df_row_result)
                 result = {
+                    'point': df_row_result['point'].iat[0],
                     'room': df_row_result['room'].iat[0],
                     'x': df_row_result['pointX'].iat[0],
                     'y': df_row_result['pointY'].iat[0]
