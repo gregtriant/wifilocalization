@@ -43,7 +43,7 @@ for floor_plan in floor_plans:
     for room in data:
         rooms.append(room['fields'])
     rm = None
-    rm = RadioMap(points, rooms, limit_scans='first', take_average=True)
+    rm = RadioMap(points, rooms, limit_scans='all', take_average=False)
     rm.make_radio_map()
     end = time.time()
     rm_data = {
@@ -86,7 +86,7 @@ def radio_map(request, floor_plan_id):
 def bssids(request, floor_plan_id):
     for rm in radio_maps:
         if rm["floor_plan_id"] == floor_plan_id:
-            return HttpResponse(json.dumps(rm["radio_map"].unique_bssids_of_floor_plan))
+            return HttpResponse(json.dumps(rm["radio_map"].unique_bssids_of_floor_plan_dict))
 
 @csrf_exempt
 def classification_algorithms(request):
@@ -196,8 +196,8 @@ def localize_test_all(request, floor_plan_id):
     response_data = []
     for i, algo in enumerate(localizer.names_of_classifiers): # 8-10 classifiers
         # send progress to client
-        if i != 1 and i != 2 and i != 8:
-            continue
+        # if i != 1 and i != 2 and i != 8:
+        #     continue
 
         algo_data = {
             "algorithm": algo,

@@ -14,37 +14,37 @@ class Localization:
     names_of_classifiers = [
         "knn",
         "wknn",
-        # "linear_svm",
+        "linear_svm",
         "svm",
         "decision_tree",
         "random_forest",
         "MLP",
         "adaboost",
-        # "naive_bayes",
+        "naive_bayes",
     ]
 
     point_classifiers = [
         KNeighborsClassifier(n_neighbors=3),
         KNeighborsClassifier(n_neighbors=5, weights='distance'),
-        # SVC(kernel="linear", C=0.025),
+        SVC(kernel="linear", C=0.025),
         SVC(gamma=2, C=1),
         DecisionTreeClassifier(max_depth=5),
         RandomForestClassifier(max_depth=5, n_estimators=10, max_features=1),
         MLPClassifier(alpha=1, max_iter=2000),
         AdaBoostClassifier(),
-        # GaussianNB(),
+        GaussianNB(),
     ]
 
     room_classifiers = [
         KNeighborsClassifier(n_neighbors=3),
         KNeighborsClassifier(n_neighbors=3, weights='distance'),
-        # SVC(kernel="linear", C=0.025),
+        SVC(kernel="linear", C=0.025),
         SVC(gamma=2, C=1),
         DecisionTreeClassifier(max_depth=5),
         RandomForestClassifier(max_depth=5, n_estimators=10, max_features=1),
         MLPClassifier(alpha=1, max_iter=2000),
         AdaBoostClassifier(),
-        # GaussianNB(),
+        GaussianNB(),
     ]
 
     test_point = [{'BSSID': '78:96:82:3a:9d:c8', 'level': -42},
@@ -89,19 +89,21 @@ class Localization:
     def find_point(self, scanned_networks, algorithm):
         df_test = self.networks_to_df(scanned_networks)
         for name, clf in zip(self.names_of_classifiers, self.point_classifiers):
-            print(name, algorithm)
+            # print(name, algorithm)
             if name == algorithm:
                 y_pred = clf.predict(df_test)
-                print("Point prediction:", int(y_pred[0]))
+                # print("Point prediction:", int(y_pred[0]))
                 df = self.radio_map.df_dataset
                 df_row_result = df.loc[df['point'] == y_pred[0]]  # get just room and pointx, pointy columns of df
-                print("result length:", len(df_row_result))
-                print(df_row_result)
+                # print("result length:", len(df_row_result))
+                if len(df_row_result) > 0:
+                    df_row_result = df_row_result.iloc[:1] # getting first row
+                # print(df_row_result)
                 result = {
-                    'point': df_row_result['point'].iat[0],
+                    'point': int(df_row_result['point'].iat[0]),
                     'room': df_row_result['room'].iat[0],
-                    'x': df_row_result['pointX'].iat[0],
-                    'y': df_row_result['pointY'].iat[0]
+                    'x': float(df_row_result['pointX'].iat[0]),
+                    'y': float(df_row_result['pointY'].iat[0])
                 }
                 return result
 

@@ -160,8 +160,8 @@
                 <div class="tab-pane active" id="radio">
                     <h4>Radio Map</h4>
                     <div class="pointsContainer">
-                        <div v-for="(bssid, index) in unique_bssids" :key="index" class="pointInfo" @click="changeSelectedBSSID(bssid, index)" :class="bssid==selected_BSSID? 'point-info-selected': ''">
-                            [[ index ]]. [[ bssid ]]
+                        <div v-for="(bssid, index) in unique_bssids" :key="index" class="pointInfo" @click="changeSelectedBSSID(bssid.bssid, index)" :class="bssid.bssid==selected_BSSID? 'point-info-selected': ''">
+                            [[ index ]]. [[ bssid.ssid ]] <br> [[ bssid.bssid ]]
                         </div>
 {#                        <div v-if="floorPlan.pins && floorPlan.pins.length==0">No bssids found.</div>#}
                     </div>
@@ -599,7 +599,7 @@
                             // find neighbors
                             res = await axios.post("/localize/point/"+this.floor_plan_id+"/", data)
                             let point_pred = res.data;
-                            {#console.log(point_pred)#}
+                            console.log(point_pred)
                             point_preds.push(point_pred);
                         } catch (err) {
                             console.log(err)

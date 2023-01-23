@@ -1,21 +1,8 @@
-import requests
 import json
 import math
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-
 import statistics
-import random
-import scipy.stats as stats
-
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.naive_bayes import GaussianNB
-from sklearn import metrics
-from sklearn.metrics import mean_squared_error
-
-from asgiref.sync import async_to_sync
-from channels.layers import get_channel_layer
 
 class SignalPoint:
     RSSI_LOWEST = -100  # dBm
@@ -41,6 +28,7 @@ class RadioMap:
     FIRST_SCANS_NUM = 40
     SECOND_SCANS_NUM = 40
     unique_bssids_of_floor_plan = []
+    unique_bssids_of_floor_plan_dict = [] # bssid and ssid values
     signal_points = []
     df_dataset = []
     rooms = []
@@ -121,6 +109,9 @@ class RadioMap:
                 break
 
     def make_radio_map(self):
+        if (self.TAKE_AVERAGE == False):
+            self.make_radio_map2()
+            return
         for index, signal_point in enumerate(self.signal_points): # all 129 signal points
             # find the unique bssids that were found during the 40 scans on this point
             # we need to do this because not all the bssids appear in each scan. some may be less frequent
@@ -166,19 +157,7 @@ class RadioMap:
             # print("Fingerpint kept:", len(signal_point.fingerprint))
             # print("--------- ", index, "FINGERPRINT:", signal_point.fingerprint)
 
-        # find unique BSSIDS in all signal_points
-        self.unique_bssids_of_floor_plan = []
-        for signal_point in self.signal_points:
-            # find the unique bssids that appear in all fingerprints of the floor plan
-            for network in signal_point.fingerprint:
-                bssid = network[0]
-                # bssids = [x[0] for x in self.unique_bssids_of_floor_plan]
-                if bssid not in self.unique_bssids_of_floor_plan:
-                    self.unique_bssids_of_floor_plan.append(bssid)
-                    # TODO add a new list of the SSID for that BSSID
-
-        print("Found", len(self.unique_bssids_of_floor_plan), "unique and useful bssids for this floor plan.")
-        # print(self.unique_bssids_of_floor_plan)
+        self.find_unique_bssids()
 
         # at each point, if a bssid is not found, we place the lowest level as its value
         for index, signal_point in enumerate(self.signal_points):
@@ -223,9 +202,122 @@ class RadioMap:
         self.df_dataset = df
 
 
+    def make_radio_map2(self):
+        print("hello")
+
+        # find unique bssids of floor plan
+        self.find_unique_bssids()
+        final_df = pd.DataFrame()
+        for sp_index, signal_point in enumerate(self.signal_points):
+
+            for i in range(self.SCAN_START, self.SCAN_END):
+                scan = signal_point.scans[i]
+                # print(scan)
+                df = self.networks_to_df(scan)
+                df.insert(loc=0, column='point', value=sp_index)
+                df.insert(loc=1, column='pointX', value=signal_point.x)
+                df.insert(loc=2, column='pointY', value=signal_point.y)
+                df.insert(loc=3, column='room', value=signal_point.room)
+                final_df = pd.concat([final_df, df], ignore_index=True, axis=0)
+        print(final_df)
+        self.df_dataset = final_df
+
+    def find_unique_bssids(self):
+        unique_bssids = []
+        for index, signal_point in enumerate(self.signal_points): # all 129 signal points
+            # find the unique bssids that were found during the 40 scans on this point
+            # we need to do this because not all the bssids appear in each scan. some may be less frequent
+            unique_bssids_of_point = []
+            for i in range(self.SCAN_START, self.SCAN_END):
+                scan = signal_point.scans[i]
+                for network in scan:
+                    # print(network)
+                    found = False
+                    for bssid in unique_bssids_of_point:
+                        if network['BSSID'] == bssid['bssid']:
+                            found = True
+                            bssid['freq'] += 1
+                            break
+
+                    if not found:
+                        new_bssid = {
+                            'bssid': network['BSSID'],
+                            'ssid': network['SSID'],
+                            'freq': 1
+                        }
+                        unique_bssids_of_point.append(new_bssid)
+
+            number_of_scans = self.SCAN_END - self.SCAN_START
+            bssids_to_keep = []
+            for bssid in unique_bssids_of_point:
+                bssid['freq'] = bssid['freq']/number_of_scans
+                if bssid['freq'] >= 0.7:
+                    bssids_to_keep.append(bssid)
+                    found = False
+                    for unique_bssid in unique_bssids:
+                        if bssid['bssid'] == unique_bssid['bssid']:
+                            found = True
+                            break
+                    if not found:
+                        unique_bssids.append(bssid)
+            del unique_bssids_of_point
+            del bssids_to_keep
+
+        print("Found:", len(unique_bssids), "unique and useful bssids for this floor plan!")
+        # print(unique_bssids)
+        self.unique_bssids_of_floor_plan_dict = unique_bssids.copy()
+        self.unique_bssids_of_floor_plan = [x['bssid'] for x in unique_bssids]
+
+    def networks_to_df(self, scanned_networks):
+        networks = list(map(lambda net: (net["BSSID"], net["level"]), scanned_networks))
+        networks = sorted(networks, key=lambda x: -x[1])
+        networks = self.organize_rssi_of_new_point(networks, self.unique_bssids_of_floor_plan)  # add the rest of the bssids that are unique to the radio map
+        df_test = self.convert_networks_to_df(networks, self.unique_bssids_of_floor_plan)  # convert to dataframe
+        return df_test
 
 
+    def organize_rssi_of_new_point(self, scanned_networks, unique_bssids_of_floor_plan):
+        # print(len(networks), networks)
+        # remove unknown bssids from this scan
+        indexes_to_remove = []
+        for network_index, network in enumerate(scanned_networks):
+            bssid = network[0]
+            if bssid not in unique_bssids_of_floor_plan:
+                # then we cannot use this network
+                indexes_to_remove.append(network_index)
 
+        new_networks = []
+        for index, net in enumerate(scanned_networks):
+            if index not in indexes_to_remove:
+                new_networks.append(net)
 
+        scanned_networks = new_networks.copy()
+        del new_networks
 
+        # print(len(networks), networks)
+        # add the lowest value to as the value of the rest of the networks that were not scanned this time
+        networks_bssids = [x[0] for x in scanned_networks]
+        for unique_bssid in unique_bssids_of_floor_plan:
+            if unique_bssid not in networks_bssids:
+                scanned_networks.append((unique_bssid, SignalPoint.RSSI_LOWEST))
+        # print(len(networks), networks)
+        assert len(scanned_networks) == len(unique_bssids_of_floor_plan), "They should be of equal length to continue!"
 
+        return scanned_networks
+
+    def convert_networks_to_df(self, networks, unique_bssids_of_floor_plan):
+        df_columns = unique_bssids_of_floor_plan.copy()
+        df_test = pd.DataFrame(columns=df_columns)
+        # print(df)
+        new_df_row = {}
+        for network in networks:
+            # print(network)
+            bssid = network[0]
+            val = network[1]
+            d = {
+                bssid: [val]
+            }
+            new_df_row.update(d)
+        # print(new_df_row)
+        df_test = pd.concat([df_test, pd.DataFrame.from_dict(new_df_row)], ignore_index=True, axis=0)
+        return df_test
