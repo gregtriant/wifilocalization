@@ -30,7 +30,7 @@ class Localization:
         SVC(gamma=2, C=1),
         DecisionTreeClassifier(max_depth=5),
         RandomForestClassifier(max_depth=5, n_estimators=10, max_features=1),
-        MLPClassifier(alpha=1, max_iter=2000),
+        MLPClassifier(alpha=1, max_iter=3000),
         AdaBoostClassifier(),
         GaussianNB(),
     ]
@@ -76,46 +76,66 @@ class Localization:
         for name, clf in zip(self.names_of_classifiers, self.point_classifiers):
             clf.fit(x_train, y_train)
 
+
     def make_room_classifiers(self):
         print("Making room classifiers...")
         x_train = self.radio_map.df_dataset.iloc[:, 4:len(self.radio_map.unique_bssids_of_floor_plan) + 4:1]
         y_train = self.radio_map.df_dataset['room'] # the room column
+
         if x_train.empty or y_train.empty:
             return
         # train the classifiers
         for name, clf in zip(self.names_of_classifiers, self.room_classifiers):
             clf.fit(x_train, y_train)
 
-    def find_point(self, scanned_networks, algorithm):
+
+    def find_point(self, scanned_networks, algorithm, probabilites=False):
         df_test = self.networks_to_df(scanned_networks)
         for name, clf in zip(self.names_of_classifiers, self.point_classifiers):
             # print(name, algorithm)
             if name == algorithm:
-                y_pred = clf.predict(df_test)
-                # print("Point prediction:", int(y_pred[0]))
-                df = self.radio_map.df_dataset
-                df_row_result = df.loc[df['point'] == y_pred[0]]  # get just room and pointx, pointy columns of df
-                # print("result length:", len(df_row_result))
-                if len(df_row_result) > 0:
-                    df_row_result = df_row_result.iloc[:1] # getting first row
-                # print(df_row_result)
-                result = {
-                    'point': int(df_row_result['point'].iat[0]),
-                    'room': df_row_result['room'].iat[0],
-                    'x': float(df_row_result['pointX'].iat[0]),
-                    'y': float(df_row_result['pointY'].iat[0])
-                }
-                return result
+                if not probabilites:
+                    y_pred = clf.predict(df_test)
+                    # print("Point prediction:", int(y_pred[0]))
+                    df = self.radio_map.df_dataset
+                    df_row_result = df.loc[df['point'] == y_pred[0]]  # get just room and pointx, pointy columns of df
+                    # print("result length:", len(df_row_result))
+                    if len(df_row_result) > 0:
+                        df_row_result = df_row_result.iloc[:1] # getting first row
+                    # print(df_row_result)
+                    result = {
+                        'point': int(df_row_result['point'].iat[0]),
+                        'room': df_row_result['room'].iat[0],
+                        'x': float(df_row_result['pointX'].iat[0]),
+                        'y': float(df_row_result['pointY'].iat[0])
+                    }
+                    return result
+                elif probabilites:
+                    y_pred = clf.predict_proba(df_test)
+                    data = {
+                        'classes': clf.classes_,
+                        'y_pred': y_pred
+                    }
+                    return data
+
 
         return 'Algorith not supported'
 
 
-    def find_room(self, scanned_networks, algorithm):
+    def find_room(self, scanned_networks, algorithm, probabilites=False):
         df_test = self.networks_to_df(scanned_networks)
         for name, clf in zip(self.names_of_classifiers, self.room_classifiers):
             if name == algorithm:
-                y_pred = clf.predict(df_test)
-                return y_pred
+                if not probabilites:
+                    y_pred = clf.predict(df_test)
+                    return y_pred
+                elif probabilites:
+                    y_pred = clf.predict_proba(df_test)
+                    data = {
+                        'classes': clf.classes_,
+                        'y_pred': y_pred
+                    }
+                    return data
 
         return 'algorithm not supported'
 

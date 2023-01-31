@@ -43,7 +43,7 @@ for floor_plan in floor_plans:
     for room in data:
         rooms.append(room['fields'])
     rm = None
-    rm = RadioMap(points, rooms, limit_scans='all', take_average=False)
+    rm = RadioMap(points, rooms, limit_scans='all', take_average=True, make_new_df=True)
     rm.make_radio_map()
     end = time.time()
     rm_data = {
@@ -143,6 +143,16 @@ def all_scans(request, floor_plan_id, point_index):
                     # print(index, sp.scans)
                     return HttpResponse(json.dumps(sp.scans))
 
+def room_stats(request, floor_plan_id):
+    for rm in radio_maps:
+        if rm["floor_plan_id"] == floor_plan_id:
+            rm_stats_for_rooms = rm["radio_map"].stats_for_rooms
+            stats = []
+            for room_stat in rm_stats_for_rooms:
+                # print(room_stat.makeRoomData())
+                stats.append(room_stat.makeRoomData())
+            return HttpResponse(json.dumps(stats))
+
 def dbm_to_percent(dbm):
     quality = 0
     if dbm <= -100:
@@ -153,30 +163,63 @@ def dbm_to_percent(dbm):
         quality = 2 * (dbm + 100)
     return quality
 
+
 class Results:
     def __init__(self):
         self.dists = []
         self.avg_error_at_each_point = []
         self.correct_room_preds = 0
         self.total_room_preds = 0
+        self.room_results = []
+
+
+    def add_new_room(self, real_room):
+        found = False
+        for room_result in self.room_results:
+            if room_result["name"] == real_room:
+                found = True
+                break
+        if not found:
+            new_room = {
+                "name": real_room,
+                "error_dists": [],
+                "correct_room_preds":0,
+                "total_room_preds": 0,
+                "avg_dist_error": 0,
+                "room_pred_acc": 0,
+            }
+            self.room_results.append(new_room)
 
     def calc_results(self, scans, localizer, algo, real_room, real_x, real_y):
         width = 600
         height = 581
+        self.add_new_room(real_room)
         avg_error_dist = 0
         for scan in scans:  # 5 scans for each point
             pred_point = localizer.find_point(scan, algo)
             pred_room = localizer.find_room(scan, algo)[0]
 
             self.total_room_preds += 1
+            for room_result in self.room_results:
+                if room_result["name"] == real_room:
+                    room_result["total_room_preds"] += 1
+
             if pred_room == real_room:
                 self.correct_room_preds += 1
+                for room_result in self.room_results:
+                    if room_result["name"] == real_room:
+                        room_result["correct_room_preds"] += 1
+
 
             error_dist = math.sqrt(((real_x * width - pred_point["x"] * width) * (real_x * width - pred_point["x"] * width)) + (
                         (real_y * height - pred_point["y"] * height) * (real_y * height - pred_point["y"] * height)))
 
-            avg_error_dist += error_dist
-            self.dists.append(error_dist)
+            for room_result in self.room_results:
+                if room_result["name"] == real_room:
+                    room_result["error_dists"].append(error_dist) # avg_error_dist at each room
+
+            avg_error_dist += error_dist # avg_error_dist_at each point
+            self.dists.append(error_dist) # total_avg_error_dist
 
         avg_error_dist = avg_error_dist / len(scans)
         self.avg_error_at_each_point.append(avg_error_dist)
@@ -196,8 +239,8 @@ def localize_test_all(request, floor_plan_id):
     response_data = []
     for i, algo in enumerate(localizer.names_of_classifiers): # 8-10 classifiers
         # send progress to client
-        # if i != 1 and i != 2 and i != 8:
-        #     continue
+        # if i != 0:
+        #     break
 
         algo_data = {
             "algorithm": algo,
@@ -217,7 +260,9 @@ def localize_test_all(request, floor_plan_id):
         human2_results = Results()
 
         for j, tp in enumerate(test_pts): # 129 points
-            print("algo:", i, "/", len(localizer.names_of_classifiers), "point:", j, "/", len(test_pts))
+            # if j > 10:
+            #     break
+            print("algo:", i, "/", len(localizer.names_of_classifiers)-1, "point:", j, "/", len(test_pts)-1)
             x = tp["x"]
             y = tp["y"]
             room = tp["room"]
@@ -249,22 +294,22 @@ def localize_test_all(request, floor_plan_id):
 
         mean_dist = np.mean(all_results.dists)
         mean_dist_in_meters = mean_dist / 60 # 30 pixels = 0.5m => 60 pixels = 1m
-        print("total mean dist:", mean_dist, 'px')
+        # print("total mean dist:", mean_dist, 'px')
         print("total mean dist:", mean_dist_in_meters, 'm')
 
         robot_mean_dist = np.mean(robot_results.dists)
         robot_mean_dist_in_meters = robot_mean_dist / 60  # 30 pixels = 0.5m => 60 pixels = 1m
-        print("Robot mean dist:", robot_mean_dist, 'px')
+        # print("Robot mean dist:", robot_mean_dist, 'px')
         print("Robot mean dist:", robot_mean_dist_in_meters, 'm')
 
         human1_mean_dist = np.mean(human1_results.dists)
         human1_mean_dist_in_meters = human1_mean_dist / 60  # 30 pixels = 0.5m => 60 pixels = 1m
-        print("Human mean dist:", human1_mean_dist, 'px')
+        # print("Human mean dist:", human1_mean_dist, 'px')
         print("Human mean dist:", human1_mean_dist_in_meters, 'm')
 
         human2_mean_dist = np.mean(human2_results.dists)
         human2_mean_dist_in_meters = human2_mean_dist / 60  # 30 pixels = 0.5m => 60 pixels = 1m
-        print("Rotating human mean dist:", human2_mean_dist, 'px')
+        # print("Rotating human mean dist:", human2_mean_dist, 'px')
         print("Rotating human mean dist:", human2_mean_dist_in_meters, 'm')
 
         algo_data["room_pred_accuracy"] = room_pred_accuracy
@@ -282,11 +327,28 @@ def localize_test_all(request, floor_plan_id):
         algo_data["human2_mean_dist_in_meters"] = human2_mean_dist_in_meters
 
         algo_data["avg_dist_of_points"] =  [(x/60) for x in all_results.avg_error_at_each_point]
-
         # print(robot_avg_dist_of_points)
         # print(human1_avg_dist_of_points)
         # print(human2_avg_dist_of_points)
         # print(avg_dist_of_points)
+
+        room_results = []
+        for room_result in all_results.room_results:
+            print("----", room_result["name"])
+            mean_dist_room_error = np.mean(room_result["error_dists"])
+            mean_dist_room_error_meters = mean_dist_room_error/60
+            room_acc = room_result["correct_room_preds"] / room_result["total_room_preds"]
+            print(mean_dist_room_error_meters)
+            print(room_acc)
+            room_data = {
+                "name": room_result["name"],
+                "mean_dist_error_in_meters": mean_dist_room_error_meters,
+                "room_acc": room_acc
+            }
+            room_results.append(room_data)
+
+        algo_data["room_results"] = room_results
+
         response_data.append(algo_data)
 
     with open('results_' + str(floor_plan_id) + '.json', 'w') as outfile:
@@ -300,6 +362,7 @@ def localize_test_all(request, floor_plan_id):
 @csrf_exempt
 def localization_results(request, floor_plan_id):
     limit = request.GET.get('limit')
+    avg = request.GET.get('avg')
     filename = 'results_' + str(floor_plan_id)
     if limit == 'first':
         filename += '_first'
@@ -308,10 +371,38 @@ def localization_results(request, floor_plan_id):
     elif limit == 'all':
         filename += '_all'
 
+    if avg == 'false':
+        filename += '_all'
+
     filename += '.json'
     with open(filename) as f:
         data = json.load(f)
         return HttpResponse(data)
+
+
+@csrf_exempt
+def localize_point(request, floor_plan_id):
+    start = time.time()
+    pred_point = {}
+    localizer = None
+    algorithm = ""
+    for local in localizers:
+        if local["floor_plan_id"] == floor_plan_id:
+            localizer = local["localizer"]
+
+    if request.method == 'POST':
+        byte_data = request.body  # this is class byte
+        string_data = byte_data.decode('UTF-8')  # convert to string
+        list_data = json.loads(string_data)  # convert to python list
+        # print(list_data)
+        test_point = list_data['networks']
+        algorithm = list_data['algorithm']
+        pred_point = localizer.find_point(test_point, algorithm)
+
+    end = time.time()
+    print("Algo:", algorithm, "Found point_pred: ", pred_point, " - time:", end-start)
+    return HttpResponse(json.dumps(pred_point))
+
 
 @csrf_exempt
 def localize_room(request, floor_plan_id):
@@ -321,14 +412,8 @@ def localize_room(request, floor_plan_id):
     for local in localizers:
         if local["floor_plan_id"] == floor_plan_id:
             localizer = local["localizer"]
-    if request.method == 'GET': # this is for testing purposes
-        test_point = [{'BSSID': '78:96:82:3a:9d:c8', 'level': -42}, {'BSSID': '28:ff:3e:03:76:dc', 'level': -62}, {'BSSID': '62:ff:3e:03:76:dd', 'level': -65}, {'BSSID': 'f4:23:9c:20:9a:06', 'level': -75},
-                      {'BSSID': '0c:b9:12:03:c4:20', 'level': -82}, {'BSSID': '08:26:97:e4:4f:51', 'level': -83}, {'BSSID': '50:78:b3:80:c4:bd', 'level': -86}, {'BSSID': '5a:d4:58:f2:8e:64', 'level': -87},
-                      {'BSSID': '78:96:82:2f:ef:4e', 'level': -88}, {'BSSID': '62:96:82:2f:ef:4f', 'level': -89}, {'BSSID': '34:58:40:e6:60:c0', 'level': -92}, {'BSSID': '50:81:40:15:41:e8', 'level': -95}]
-        room = localizer.find_room(test_point, 'knn')
-        room_pred = room[0]
 
-    elif request.method == 'POST':
+    if request.method == 'POST':
         byte_data = request.body  # this is class byte
         string_data = byte_data.decode('UTF-8')  # convert to string
         list_data = json.loads(string_data)  # convert to python list
@@ -347,36 +432,62 @@ def localize_room(request, floor_plan_id):
 
 
 @csrf_exempt
-def localize_point(request, floor_plan_id):
+def localize_point_prob(request, floor_plan_id):
     start = time.time()
-    pred_point = {}
+    pred_point = None
+    classes = None
     localizer = None
-    algorithm = ""
     for local in localizers:
         if local["floor_plan_id"] == floor_plan_id:
             localizer = local["localizer"]
-    if request.method == 'GET': # this is for testing purposes
-        test_point = [{'BSSID': '78:96:82:3a:9d:c8', 'level': -42}, {'BSSID': '28:ff:3e:03:76:dc', 'level': -62}, {'BSSID': '62:ff:3e:03:76:dd', 'level': -65}, {'BSSID': 'f4:23:9c:20:9a:06', 'level': -75},
-                      {'BSSID': '0c:b9:12:03:c4:20', 'level': -82}, {'BSSID': '08:26:97:e4:4f:51', 'level': -83}, {'BSSID': '50:78:b3:80:c4:bd', 'level': -86}, {'BSSID': '5a:d4:58:f2:8e:64', 'level': -87},
-                      {'BSSID': '78:96:82:2f:ef:4e', 'level': -88}, {'BSSID': '62:96:82:2f:ef:4f', 'level': -89}, {'BSSID': '34:58:40:e6:60:c0', 'level': -92}, {'BSSID': '50:81:40:15:41:e8', 'level': -95}]
-        # knns = localizer.knn(signal_points, test_point, 4)
-        pred_point = localizer.knn(test_point, 'knn')
 
-
-    elif request.method == 'POST':
+    if request.method == 'POST':
         byte_data = request.body  # this is class byte
         string_data = byte_data.decode('UTF-8')  # convert to string
         list_data = json.loads(string_data)  # convert to python list
         # print(list_data)
-
         test_point = list_data['networks']
         algorithm = list_data['algorithm']
-        pred_point = localizer.find_point(test_point, algorithm)
+        point = localizer.find_point(test_point, algorithm, probabilites=True)
+        classes = point['classes'].tolist()
+        pred_point = point['y_pred'][0].tolist()
+
+    data = {
+        'point_pred': pred_point,
+        'classes': classes
+    }
 
     end = time.time()
-    print("Algo:", algorithm, "Found point_pred: ", pred_point, " - time:", end-start)
-    return HttpResponse(json.dumps(pred_point))
+    print("Algo:", algorithm, "Found point_pred: ", json.dumps(data), " - time:", end-start)
+    return HttpResponse(json.dumps(data))
 
+@csrf_exempt
+def localize_room_prob(request, floor_plan_id):
+    start = time.time()
+    room_pred = None
+    classes = None
+    localizer = None
+    for local in localizers:
+        if local["floor_plan_id"] == floor_plan_id:
+            localizer = local["localizer"]
+
+    if request.method == 'POST':
+        byte_data = request.body  # this is class byte
+        string_data = byte_data.decode('UTF-8')  # convert to string
+        list_data = json.loads(string_data)  # convert to python list
+        # print(list_data)
+        test_point = list_data['networks']
+        algorithm = list_data['algorithm']
+        room = localizer.find_room(test_point, algorithm, probabilites=True)
+        room_pred = room['y_pred'][0].tolist()
+        classes = room['classes'].tolist()
+    data = {
+        "room_pred": room_pred,
+        "classes": classes
+    }
+    end = time.time()
+    print("Found room_pred: ", data, " - time:", end - start)
+    return HttpResponse(json.dumps(data))
 
 @csrf_exempt
 def fingerprinting(request, floor_plan_id):  # api path: <int:floor_plan_id>/fingerprinting/

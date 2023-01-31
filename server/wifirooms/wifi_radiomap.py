@@ -23,6 +23,60 @@ class SignalPoint:
     def set_fingerprint(self, fingerprint):
         self.fingerprint = fingerprint.copy()
 
+class BSSID:
+    def __init__(self, bssid : str, ssid : str):
+        self.bssid = bssid
+        self.ssid = ssid
+        self.vals = []  # legit rssi values
+        self.mean = 0
+        self.var = 0
+        self.freq = 0
+        self.points_appeared = []
+
+    def addVal(self, val : int):
+        self.vals.append(val)
+
+    def calcMean(self):
+        self.mean = np.mean(self.vals)
+
+    def calcVar(self):
+        self.var = np.var(self.vals)
+
+    def bssidData(self):
+        data = {
+            'bssid': self.bssid,
+            'ssid': self.ssid,
+            'vals': self.vals,
+            'mean': self.mean,
+            'var': self.var,
+            'freq': self.freq,
+            'points_appeared': self.points_appeared
+        }
+        return data
+
+class RoomStats:
+    def __init__(self, room_name : str):
+        self.name = room_name
+        self.bssids = []
+        self.signal_points = []
+
+    def addBssid(self, bssid : BSSID):
+        self.bssids.append(bssid)
+
+    def addSignalPoint(self, sp: SignalPoint):
+        self.signal_points.append(sp)
+
+    def makeRoomData(self):
+        room_data = {
+            "bssids_data": [],
+            "room": self.name,
+            "num_sps": len(self.signal_points)
+        }
+
+        for bssid in self.bssids:
+            data = bssid.bssidData()
+            room_data["bssids_data"].append(data)
+        return room_data
 
 class RadioMap:
     FIRST_SCANS_NUM = 40
@@ -32,8 +86,9 @@ class RadioMap:
     signal_points = []
     df_dataset = []
     rooms = []
+    stats_for_rooms = []
 
-    def __init__(self, points_from_database, rooms_from_database, limit_scans='all', take_average=True):
+    def __init__(self, points_from_database, rooms_from_database, limit_scans='all', take_average=True, make_new_df=True):
         self.rooms = rooms_from_database
         self.signal_points = []
         if limit_scans == 'all':
@@ -50,6 +105,11 @@ class RadioMap:
             self.TAKE_AVERAGE = True
         else:
             self.TAKE_AVERAGE = False
+
+        if make_new_df:
+            self.MAKE_NEW_DF = True
+        else:
+            self.MAKE_NEW_DF = False
 
         # for each scan we see the coordinates and group them to single points. One point has a number of scans
         for index, point in enumerate(points_from_database):
@@ -77,6 +137,47 @@ class RadioMap:
 
         del points_from_database
         print('Found ', len(self.signal_points), 'different points')
+
+        # Find Room_stats
+        for room_stat in self.stats_for_rooms:
+            # if room_stat.name == "office":
+            #     break
+            total_scans = 0
+            for sp_index, sp in enumerate(room_stat.signal_points):
+                for scan_index in range(self.SCAN_START, self.SCAN_END):
+                    scan = sp.scans[scan_index]
+                    total_scans += 1
+                    for net in scan:
+                        bssid_name = net["BSSID"]
+                        ssid = net["SSID"]
+                        val = net["level"]
+
+                        found = False
+                        for bssid in room_stat.bssids:
+                            if bssid.bssid == bssid_name:
+                                found = True
+                                bssid.addVal(val)
+                                if sp_index not in bssid.points_appeared:
+                                    bssid.points_appeared.append(sp_index) # keep track on which points it appeared
+                                break
+                        if not found:
+                            new_bssid = BSSID(bssid_name, ssid)
+                            new_bssid.addVal(val)
+                            new_bssid.points_appeared.append(sp_index)
+                            room_stat.addBssid(new_bssid)
+
+            for bssid in room_stat.bssids:
+                freq = len(bssid.vals)/total_scans
+                bssid.freq = freq
+                bssid.calcMean()
+                bssid.calcVar()
+                # print(bssid.bssidData())
+
+            # print(room_stat.name, "sps:", len(room_stat.signal_points), "bssids:", len(room_stat.bssids))
+
+
+
+
 
     def add_scan_to_radio_map(self, x, y, networks): # this function exists so that we dont have to reconstuct the radio
                                                      # map every time we add a new scan.
@@ -106,6 +207,17 @@ class RadioMap:
             if room["x"] < sp.x and sp.x < room["x"] + room["width"] and room["y"] < sp.y and sp.y < room["y"] + room["height"]:
                 sp.set_room_of_point(room["name"])
                 # print(sp.room)
+                # add sp to room_stats
+                found = False
+                for room_stat in self.stats_for_rooms:
+                    if room_stat.name == room["name"]:
+                        found = True
+                        room_stat.addSignalPoint(sp)
+                        break
+                if not found:
+                    new_room_stat = RoomStats(room["name"])
+                    new_room_stat.addSignalPoint(sp)
+                    self.stats_for_rooms.append(new_room_stat)
                 break
 
     def make_radio_map(self):
@@ -171,56 +283,84 @@ class RadioMap:
                 if not found:
                     signal_point.fingerprint.append((bssid, 1, signal_point.RSSI_LOWEST, 0, signal_point.RSSI_LOWEST))  # 0:bssid, 1:freq, 2:mean, 3:std, 4:mode
 
+        if self.MAKE_NEW_DF:
+            # make a dataframe for the dataset
+            df_columns = self.unique_bssids_of_floor_plan.copy()
+            df_columns.insert(0, "point")
+            df_columns.insert(1, "pointX")
+            df_columns.insert(2, "pointY")
+            df_columns.insert(3, "room")
+            df = pd.DataFrame(columns=df_columns)
+            # print(df)
+            for index, sp in enumerate(self.signal_points):
+                # print(sp.room)
+                new_df_row = {}
+                new_df_row.update({'point': str(index)})
+                new_df_row.update({'pointX': [sp.x]})
+                new_df_row.update({'pointY': [sp.y]})
+                new_df_row.update({'room': [sp.room]})
 
-        # make a dataframe for the dataset
-        df_columns = self.unique_bssids_of_floor_plan.copy()
-        df_columns.insert(0, "point")
-        df_columns.insert(1, "pointX")
-        df_columns.insert(2, "pointY")
-        df_columns.insert(3, "room")
-        df = pd.DataFrame(columns=df_columns)
-        # print(df)
-        for index, sp in enumerate(self.signal_points):
-            # print(sp.room)
-            new_df_row = {}
-            new_df_row.update({'point': str(index)})
-            new_df_row.update({'pointX': [sp.x]})
-            new_df_row.update({'pointY': [sp.y]})
-            new_df_row.update({'room': [sp.room]})
+                for network in sp.fingerprint:
+                    bssid = network[0]
+                    mean = network[2]
+                    d = {
+                        bssid: mean
+                    }
+                    new_df_row.update(d)
+                # print(new_df_row)
+                df = pd.concat([df, pd.DataFrame.from_dict(new_df_row)], ignore_index=True, axis=0)
 
-            for network in sp.fingerprint:
-                bssid = network[0]
-                mean = network[2]
-                d = {
-                    bssid: mean
-                }
-                new_df_row.update(d)
-            # print(new_df_row)
-            df = pd.concat([df, pd.DataFrame.from_dict(new_df_row)], ignore_index=True, axis=0)
-
-        print(df.head())
-        self.df_dataset = df
+            # print(df.head())
+            json_data = df.to_json()
+            with open('df_' + str(1) + '.json', 'w') as fout:
+                json.dump(json_data, fout)
+                print("--> saved new DF to file")
+            self.df_dataset = df
+        else:
+            with open('df_' + str(1) + '.json', 'r') as f:
+                df = json.load(f)
+                df = json.loads(df)
+                df = json.loads(df)
+                print("--> loaded DF from file")
+                # print(df)
+                # print(type(df))
+            self.df_dataset = pd.DataFrame.from_dict(df)
+            # print(self.df_dataset.head())
 
 
     def make_radio_map2(self):
-        print("hello")
-
-        # find unique bssids of floor plan
+        print("Using all scans for the radio map...")
         self.find_unique_bssids()
-        final_df = pd.DataFrame()
-        for sp_index, signal_point in enumerate(self.signal_points):
+        if self.MAKE_NEW_DF:
+            # find unique bssids of floor plan
+            final_df = pd.DataFrame()
+            for sp_index, signal_point in enumerate(self.signal_points):
+                for i in range(self.SCAN_START, self.SCAN_END):
+                    scan = signal_point.scans[i]
+                    # print(scan)
+                    df = self.networks_to_df(scan)
+                    df.insert(loc=0, column='point', value=sp_index)
+                    df.insert(loc=1, column='pointX', value=signal_point.x)
+                    df.insert(loc=2, column='pointY', value=signal_point.y)
+                    df.insert(loc=3, column='room', value=signal_point.room)
+                    final_df = pd.concat([final_df, df], ignore_index=True, axis=0)
+            print(final_df)
+            self.df_dataset = final_df
+            json_data = final_df.to_json()
+            with open('df_' + str(1) + '.json', 'w') as fout:
+                json.dump(json_data, fout)
+                print("--> saved new DF to file")
+        else:
+            with open('df_' + str(1) + '.json', 'r') as f:
+                df = json.load(f)
+                df = json.loads(df)
+                # df = json.loads(df)
+                print("--> loaded DF from file")
+                # print(df)
+                # print(type(df))
+            self.df_dataset = pd.DataFrame.from_dict(df)
+            # print(self.df_dataset)
 
-            for i in range(self.SCAN_START, self.SCAN_END):
-                scan = signal_point.scans[i]
-                # print(scan)
-                df = self.networks_to_df(scan)
-                df.insert(loc=0, column='point', value=sp_index)
-                df.insert(loc=1, column='pointX', value=signal_point.x)
-                df.insert(loc=2, column='pointY', value=signal_point.y)
-                df.insert(loc=3, column='room', value=signal_point.room)
-                final_df = pd.concat([final_df, df], ignore_index=True, axis=0)
-        print(final_df)
-        self.df_dataset = final_df
 
     def find_unique_bssids(self):
         unique_bssids = []
@@ -243,7 +383,8 @@ class RadioMap:
                         new_bssid = {
                             'bssid': network['BSSID'],
                             'ssid': network['SSID'],
-                            'freq': 1
+                            'freq': 1,
+                            'values': []
                         }
                         unique_bssids_of_point.append(new_bssid)
 

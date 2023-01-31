@@ -21,10 +21,14 @@ urlpatterns = [
     path('<int:floor_plan_id>/point_scans/', views.point_scans, name="point_scans"),  # returns the test points with their scans for the floor_plan's radio map
     path('<int:floor_plan_id>/test_points/', views.test_points, name="test_points"),  # returns the test points with their scans for the floor_plan's radio map
     path('<int:floor_plan_id>/all_scans/<int:point_index>', views.all_scans, name="all_scans"), # returns all the scans done on that point
+    path('<int:floor_plan_id>/room_stats/', views.room_stats, name="room_stats"), # data for all rooms for this floor plan id
 
     path('localize/classification_algorithms/', views.classification_algorithms, name="classification_algorithms"),
     path('localize/point/<int:floor_plan_id>/', views.localize_point, name="localize_point"),
     path('localize/room/<int:floor_plan_id>/', views.localize_room, name="localize_room"),
+    path('localize/point_prob/<int:floor_plan_id>/', views.localize_point_prob, name="localize_point_prob"),
+    path('localize/room_prob/<int:floor_plan_id>/', views.localize_room_prob, name="localize_room_prob"),
+
     path('localize/test_all/<int:floor_plan_id>/', views.localize_test_all, name="localize_test_all"),
     path('localize/localization_results/<int:floor_plan_id>/', views.localization_results, name="localization_results"),
 

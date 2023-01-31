@@ -10,23 +10,44 @@
 {% endblock %}
 
 {% block content %}
-    <div class="container-fluid">
+    <div class="container" id="vue-app">
         <h3 class="">Results</h3>
         <hr>
-
-        <div id="results"></div>
-    </div>
-
-    <div class="container-fluid" id="vue-app">
-        <div>
-{#            [[results]]#}
+        <h6>Select Scans range</h6>
+        <div class="form-group">
+            <select class="form-control" id="select_scan-range" v-model="selectedScanRange">
+                <option key="1">Current Results</option>
+                <option key="2">First Scan</option>
+                <option key="3">Second Scan</option>
+                <option key="4">All</option>
+            </select>
         </div>
+        <h6>Select Fingerprint type</h6>
+        <div class="form-group">
+            <select class="form-control" id="select_finger_type" v-model="selectedFingerprintingType">
+                <option key="1">Average</option>
+                <option key="2">All</option>
+            </select>
+        </div>
+        <h6>Select Point for Wifi Scans</h6>
+        <div class="input-group mb-3">
+            <input type="text" class="form-control" placeholder="Poin Number" v-model="selectedPoint">
+        </div>
+        <h6>Select Deadreckoning data Room</h6>
+        <div class="form-group">
+            <select class="form-control" id="select_deadreckoning_room" v-model="selectedDeadreckoningRoom">
+                <option key="1">big_room</option>
+                <option key="2">small_room</option>
+                <option key="3">office</option>
+                <option key="4">hall_kitchen</option>
+            </select>
+        </div>
+        <button class="btn btn-info" @click="changeResults()">Go</button>
     </div>
 
-{#    <script>#}
-{#      const res = d3.csvParse("Name,Age\nJane,29\nJoe,33");#}
-{#      console.log(res);#}
-{#    </script>#}
+    <div id="room_results"></div>
+    <div id="results"></div>
+
     <script>
         let app = new Vue({
             el: "#vue-app",
@@ -37,25 +58,194 @@
                 floorplanid: '',
                 routes: [],
 
-                results_url: "/localize/localization_results/1/" //?limit=second
+                selectedScanRange: "Current Results",
+                selectedFingerprintingType: "Average",
+                selectedPoint: 0,
+                selectedDeadreckoningRoom: "big_room",
+
+                results_url: "/localize/localization_results/1/?limit=" //?limit=second
             },
             async created() {
-                console.log('host: ', window.location.host)
-                console.log('url:', window.location.pathname)
-                this.floorplanid = window.location.pathname.split('/')[0]
-                await this.getResults();
+                console.log('host: ', window.location.host);
+                console.log('url:', window.location.pathname);
+                this.floorplanid = window.location.pathname.split('/')[0];
                 await this.getRoutes();
-
-                this.makeResultCharts();
-
-                await this.getAllScans(0);
-                await this.getDeadReckoningData();
+                await this.makeRoomResults();
             },
             methods: {
+                async changeResults() {
+                    console.log(this.selectedScanRange)
+                    console.log(this.selectedFingerprintingType)
+                    console.log(this.selectedPoint)
+                    let limit = '';
+                    if (this.selectedScanRange == "First Scan") {
+                        limit = 'first';
+                    } else if (this.selectedScanRange == "Second Scan") {
+                        limit = 'second';
+                    } else if (this.selectedScanRange == "All") {
+                        limit = 'all';
+                    } else if (this.selectedScanRange == "Current Results") {
+
+                    }
+                    let avg = false;
+                    if (this.selectedFingerprintingType == "Average") {
+                        avg = true;
+                    } else if (this.selectedFingerprintingType == "Second Scan") {
+                        avg = false;
+                    }
+                    this.results_url = "/localize/localization_results/1/?limit=" + limit + "&avg=" + avg;
+                    console.log(this.results_url)
+
+                    await this.getResults();
+                    this.makeResultCharts();
+                    await this.getAllScans(this.selectedPoint);
+                    await this.getDeadReckoningData(this.selectedDeadreckoningRoom);
+                },
+
+                async makeRoomResults() {
+                    try {
+                        // get unique bssids of floorplan
+                        const res1 = await axios.get("/1/bssids")
+                        let unique_bssids = res1.data.map(bssid => {
+                            return bssid.bssid
+                        });
+                        console.log(unique_bssids)
+
+                        const res2 = await axios.get('/1/room_stats/')
+                        let room_stats = res2.data;
+                        console.log(room_stats)
+                        for (let i=0; i<room_stats.length; i++) {
+                            let room = room_stats[i];
+                            let room_name = room.room;
+                            let num_sps = room.num_sps;
+                            let room_bssids = [];
+                            for (let j=0; j<room.bssids_data.length; j++) {
+                                // check if bssid is in unique bssids of floorplan and only keep those
+                                if (unique_bssids.includes(room.bssids_data[j].bssid)) {
+                                    {#console.log(room.bssids_data[j].bssid)#}
+                                    room_bssids.push(room.bssids_data[j])
+                                }
+                                // if (room.bssids_data[j].freq > 0.3) {
+                                //    room_bssids.push(room.bssids_data[j])
+                                // }
+                            }
+                            room_bssids.sort((a,b) => {
+                                if (a.freq > b.freq) return -1;
+                                if (b.freq > a.freq) return 1;
+                                return 0;
+                            })
+                            console.log(room, room_bssids);
+
+                            // make a chart for each room with all the statistics of the bssids found
+                            const room_resultsDiv = document.getElementById('room_results');
+                            const resultsDiv = document.createElement("div");
+                            resultsDiv.id = 'room_' + room_name;
+                            room_resultsDiv.appendChild(resultsDiv);
+                            const chartDiv = document.createElement("div");
+                            chartDiv.id = 'room_' + room_name + '_chart';
+                            chartDiv.style.height = "800px";
+                            resultsDiv.appendChild(chartDiv);
+                            let traces = [];
+                            for (let k=0; k<room_bssids.length; k++) {
+                                let vals = room_bssids[k].vals;
+                                let new_trace = {
+                                    y: vals,
+                                    type: "box",
+                                    boxmean: 'sd',
+                                    name: room_bssids[k].ssid //room_bssids[k].bssid + ' ' +
+                                }
+                                traces.push(new_trace)
+                            }
+                            let layout = {
+                                legend: {"orientation": "h"},
+                                title: 'Box Plot Styling Mean and Standard Deviation:' + room_name,
+                                "xaxis": {
+                                    "visible": false
+                                },
+                            }
+                            Plotly.newPlot('room_' + room_name + '_chart', traces, layout);
+
+                            // make a table with stats for each bssid
+                            this.makeTable('room_' + room_name, room_name, room_bssids, num_sps);
+                        }
+
+                    } catch(e) {
+                        console.log(e)
+                    }
+                },
+                makeTable(newDivId, room_name, room_bssids, num_sps) {
+                    const room_div = document.getElementById(newDivId);
+                    console.log(room_div);
+                    let table = document.createElement('table');
+                    table.classList.add('table');
+                    let thead = document.createElement('thead');
+                    let tbody = document.createElement('tbody');
+
+                    table.appendChild(thead);
+                    table.appendChild(tbody);
+
+                    // Adding the entire table to the body tag
+                    room_div.appendChild(table);
+
+                    // Creating and adding data to first row of the table
+                    let row_1 = document.createElement('tr');
+                    let heading_0 = document.createElement('th');
+                    heading_0.innerHTML = "#";
+                    let heading_1 = document.createElement('th');
+                    heading_1.innerHTML = "SSID";
+                    let heading_2 = document.createElement('th');
+                    heading_2.innerHTML = "Mean";
+                    let heading_3 = document.createElement('th');
+                    heading_3.innerHTML = "Var";
+                    let heading_4 = document.createElement('th');
+                    heading_4.innerHTML = "Freq";
+                    let heading_5 = document.createElement('th');
+                    heading_5.innerHTML = "App_ratio";
+
+
+                    row_1.appendChild(heading_0);
+                    row_1.appendChild(heading_1);
+                    row_1.appendChild(heading_2);
+                    row_1.appendChild(heading_3);
+                    row_1.appendChild(heading_4);
+                    row_1.appendChild(heading_5);
+                    thead.appendChild(row_1);
+
+
+                    // Creating and adding data to second row of the table
+
+                    for (let i=0; i<room_bssids.length; i++) {
+                        let row_2 = document.createElement('tr');
+                        let row_2_data_0 = document.createElement('td');
+                        row_2_data_0.innerHTML = i.toString();
+                        let row_2_data_1 = document.createElement('td');
+                        row_2_data_1.innerHTML = room_bssids[i].ssid;
+                        let row_2_data_2 = document.createElement('td');
+                        row_2_data_2.innerHTML = room_bssids[i].mean.toFixed(2);
+                        let row_2_data_3 = document.createElement('td');
+                        row_2_data_3.innerHTML = room_bssids[i].var.toFixed(2);
+                        let row_2_data_4 = document.createElement('td');
+                        row_2_data_4.innerHTML = (room_bssids[i].freq * 100).toFixed(2) + '%';
+                        let row_2_data_5 = document.createElement('td');
+                        row_2_data_5.innerHTML = room_bssids[i].points_appeared.length + "/" + num_sps;
+
+                        row_2.appendChild(row_2_data_0);
+                        row_2.appendChild(row_2_data_1);
+                        row_2.appendChild(row_2_data_2);
+                        row_2.appendChild(row_2_data_3);
+                        row_2.appendChild(row_2_data_4);
+                        row_2.appendChild(row_2_data_5);
+                        tbody.appendChild(row_2);
+                    }
+
+
+                    {#room_div.appendChild(newTable);#}
+
+                },
                 async getResults() {
                     try {
                         const res = await axios.get(this.results_url)
-                        {#console.log(res.data)#}
+                        console.log(res.data)
                         this.results = res.data;
                     } catch(e) {
                         console.log(e)
@@ -72,9 +262,9 @@
                     }
                 },
 
-                async getDeadReckoningData() {
+                async getDeadReckoningData(room) {
                     try {
-                        const res = await axios.get('/static/data/small_room.csv')
+                        const res = await axios.get('/static/data/'+ room +'.csv')
                         {#console.log(res.data);#}
                         let csvData = res.data;
                         let lines = csvData.split('\n');
@@ -290,12 +480,16 @@
                     let human1MeanDist = [];
                     let human2MeanDist = [];
 
-                    let big_plot_data = []
-                    let max_avarages = []
+                    let big_plot_data = [];
+                    let max_avarages = [];
+                    let max_room_pred_algo = '';
+                    let max_room_pred = 0;
+                    let min_dist_error_algo = '';
+                    let min_dist_error = 200; // in meters
                     for (let i=0; i<this.results.length; i++) {
                         let data = this.results[i];
                         let avgDistOfPoints = data.avg_dist_of_points;
-                        let indexes = [...Array(avgDistOfPoints.length).keys()]
+                        let indexes = [...Array(avgDistOfPoints.length).keys()] // array with values from 0 to point.length
                         let new_trace = {
                             x: indexes,
                             y: avgDistOfPoints,
@@ -313,11 +507,18 @@
                         robotRoomAcc.push((data.robot_room_pred_acc * 100).toFixed(2));
                         human1RoomAcc.push((data.human1_room_pred_acc * 100).toFixed(2));
                         human2RoomAcc.push((data.human2_room_pred_acc * 100).toFixed(2));
-
+                        if ((data.room_pred_accuracy * 100).toFixed(2) >= max_room_pred) {
+                            max_room_pred = (data.room_pred_accuracy * 100).toFixed(2)
+                            max_room_pred_algo = data.algorithm;
+                        }
                         meanDist.push(data.mean_dist_in_meters.toFixed(2));
                         robotMeanDist.push(data.robot_mean_dist_in_meters.toFixed(2));
                         human1MeanDist.push(data.human1_mean_dist_in_meters.toFixed(2));
                         human2MeanDist.push(data.human2_mean_dist_in_meters.toFixed(2));
+                        if (data.mean_dist_in_meters.toFixed(2) <= min_dist_error) {
+                            min_dist_error = data.mean_dist_in_meters.toFixed(2)
+                            min_dist_error_algo = data.algorithm;
+                        }
                     }
 
                     let max_avg_dist = Math.max(...max_avarages)
@@ -370,7 +571,7 @@
                             title: 'Point Index'
                         },
                         yaxis: {
-                            title: 'Distance Error'
+                            title: 'Avg Distance Error'
                         },
                         shapes: shapes
                     };
@@ -382,44 +583,24 @@
                     newDiv2.id = 'room_pred';
                     resultsDiv.appendChild(newDiv2);
 
-                    let trace1 = {
-                        x: algos,
-                        y: roomAcc,
-                        name: 'total',
-                        type: 'bar',
-                        marker:{
-                            color: 'rgba(255,116,116,0.84)'
-                        },
-                    };
-                    let trace2 = {
-                        x: algos,
-                        y: robotRoomAcc,
-                        name: 'robot',
-                        type: 'bar',
-                        marker:{
-                            color: 'rgba(253,219,94,0.82)'
-                        },
-                    };
-                    let trace3 = {
-                        x: algos,
-                        y: human1RoomAcc,
-                        name: 'human',
-                        type: 'bar',
-                        marker:{
-                            color: 'rgba(84,222,52,0.63)'
-                        },
-                    };
-                    let trace4 = {
-                        x: algos,
-                        y: human2RoomAcc,
-                        name: 'rotatingHuman',
-                        type: 'bar',
-                        marker:{
-                            color: 'rgba(86,107,255,0.93)'
-                        },
-                    };
-                    let data = [trace1, trace2, trace3, trace4];
-                    let layout = {
+                    let room_pred_traces = [roomAcc, robotRoomAcc, human1RoomAcc, human2RoomAcc]
+                    let room_pred_names = ['total', 'robot', 'human', 'rotatingHuman']
+                    let room_colors = ['rgba(255,116,116,0.84)', 'rgba(253,219,94,0.82)', 'rgba(84,222,52,0.63)', 'rgba(86,107,255,0.93)']
+                    let room_data = [];
+                    for (let k=0; k<room_pred_traces.length; k++) {
+                        let new_room_trace = {
+                            x: algos,
+                            y: room_pred_traces[k],
+                            name: room_pred_names[k],
+                            type: 'bar',
+                            marker:{
+                                color: room_colors[k]
+                            },
+                        };
+                        room_data.push(new_room_trace);
+                    }
+
+                    let room_layout = {
                         barmode: 'group',
                         title: 'Room Prediction Accuracy',
                         xaxis: {
@@ -427,63 +608,125 @@
                         },
                         yaxis: {
                             range: [0, 100],
-                            title: 'Accuracy %'
+                            title: 'Accuracy (%)'
                         },
                     };
-                    Plotly.newPlot('room_pred', data, layout);
+                    Plotly.newPlot('room_pred', room_data, room_layout);
 
                     const newDiv3 = document.createElement("div");
                     newDiv3.id = 'dist_pred';
                     resultsDiv.appendChild(newDiv3);
 
-                    let trace5 = {
-                        x: algos,
-                        y: meanDist,
-                        name: 'total',
-                        type: 'bar',
-                        marker:{
-                            color: 'rgba(255,116,116,0.84)'
-                        },
-                    };
-                    let trace6 = {
-                        x: algos,
-                        y: robotMeanDist,
-                        name: 'robot',
-                        type: 'bar',
-                        marker:{
-                            color: 'rgba(253,219,94,0.82)'
-                        },
-                    };
-                    let trace7 = {
-                        x: algos,
-                        y: human1MeanDist,
-                        name: 'human',
-                        type: 'bar',
-                        marker:{
-                            color: 'rgba(84,222,52,0.63)'
-                        },
-                    };
-                    let trace8 = {
-                        x: algos,
-                        y: human2MeanDist,
-                        name: 'rotatingHuman',
-                        type: 'bar',
-                        marker:{
-                            color: 'rgba(86,107,255,0.93)'
-                        },
-                    };
-                    let data2 = [trace5, trace6, trace7, trace8];
-                    let layout2 = {
+                    let dist_error_traces = [meanDist, robotMeanDist, human1MeanDist, human2MeanDist]
+                    let dist_error_names = ['total', 'robot', 'human', 'rotatingHuman']
+                    let dist_error_data = [];
+                    for (let k=0; k<dist_error_traces.length; k++) {
+                        let new_dist_error_trace = {
+                            x: algos,
+                            y: dist_error_traces[k],
+                            name: dist_error_names[k],
+                            type: 'bar',
+                            marker:{
+                                color: room_colors[k]
+                            },
+                        };
+                        dist_error_data.push(new_dist_error_trace);
+                    }
+
+                    let dist_error_layout = {
                         barmode: 'group',
-                        title: 'Mean Distance Error',
+                        title: 'Avg Distance Error',
                         xaxis: {
                             title: 'Algorithms'
                         },
                         yaxis: {
-                            title: 'Mean distance Error (m)'
+                            title: 'Avg Distance Error (m)'
                         },
                     };
-                    Plotly.newPlot('dist_pred', data2, layout2);
+                    Plotly.newPlot('dist_pred', dist_error_data, dist_error_layout);
+
+
+                    console.log("max room pred:",max_room_pred_algo);
+                    console.log("min_dist:", min_dist_error_algo);
+                    let room_pred_data_for_algo = []
+                    let room_dist_error_for_algo = []
+                    for (const algo of this.results) {
+                        {#console.log(algo.algorithm)#}
+                        if (algo.algorithm == max_room_pred_algo) {
+                            room_pred_data_for_algo = algo.room_results
+                        }
+                        if (algo.algorithm == min_dist_error_algo) {
+                            room_dist_error_for_algo = algo.room_results
+                        }
+                    }
+                    console.log(room_pred_data_for_algo)
+                    console.log(room_dist_error_for_algo)
+
+                    const newDiv4 = document.createElement("div");
+                    newDiv4.id = 'room_pred_for_algo';
+                    resultsDiv.appendChild(newDiv4);
+
+                    let room_names1 = [];
+                    let room_preds1 = [];
+                    for (let k=0; k<room_pred_data_for_algo.length; k++) {
+                        room_names1.push(room_pred_data_for_algo[k].name);
+                        room_preds1.push((room_pred_data_for_algo[k].room_acc *100).toFixed(2));
+                    }
+
+                    let new_room_pred_trace = {
+                        x: room_names1,
+                        y: room_preds1,
+                        name: max_room_pred_algo,
+                        type: 'bar',
+                        marker: {
+                            color: room_colors[0]
+                        },
+                    };
+
+                    let new_room_pred_layout = {
+                        barmode: 'group',
+                        title: 'Pred Acc per room for Algo: ' + max_room_pred_algo,
+                        xaxis: {
+                            title: 'Rooms'
+                        },
+                        yaxis: {
+                            title: 'Accuracy (%)'
+                        },
+                    };
+                    Plotly.newPlot('room_pred_for_algo', [new_room_pred_trace], new_room_pred_layout);
+
+
+                    const newDiv5 = document.createElement("div");
+                    newDiv5.id = 'room_dist_error_for_algo';
+                    resultsDiv.appendChild(newDiv5);
+                    let room_names2 = [];
+                    let room_dists2 = [];
+                    for (let k=0; k<room_pred_data_for_algo.length; k++) {
+                        room_names2.push(room_dist_error_for_algo[k].name);
+                        room_dists2.push(room_dist_error_for_algo[k].mean_dist_error_in_meters.toFixed(2));
+                    }
+
+                    let new_room_dist_error_trace = {
+                        x: room_names2,
+                        y: room_dists2,
+                        name: min_dist_error_algo,
+                        type: 'bar',
+                        marker: {
+                            color: room_colors[3]
+                        },
+                    };
+
+                    let new_room_dist_error_layout = {
+                        barmode: 'group',
+                        title: 'Avg Distance error per room for algo: ' + min_dist_error_algo,
+                        xaxis: {
+                            title: 'Rooms'
+                        },
+                        yaxis: {
+                            title: 'Avg Distance Error (m)'
+                        },
+                    };
+                    Plotly.newPlot('room_dist_error_for_algo', [new_room_dist_error_trace], new_room_dist_error_layout);
                 },
             }
 
