@@ -109,33 +109,51 @@
                         let unique_bssids = res1.data.map(bssid => {
                             return bssid.bssid
                         });
-                        console.log(unique_bssids)
+                        {#console.log(unique_bssids)#}
 
                         const res2 = await axios.get('/1/room_stats/')
                         let room_stats = res2.data;
-                        console.log(room_stats)
+                        console.log("starting room stats:", room_stats);
+
                         for (let i=0; i<room_stats.length; i++) {
                             let room = room_stats[i];
                             let room_name = room.room;
                             let num_sps = room.num_sps;
                             let room_bssids = [];
-                            for (let j=0; j<room.bssids_data.length; j++) {
-                                // check if bssid is in unique bssids of floorplan and only keep those
-                                if (unique_bssids.includes(room.bssids_data[j].bssid)) {
+                            {#for (let j=0; j<room.bssids_data.length; j++) {#}
+                            {#    // check if bssid is in unique bssids of floorplan and only keep those#}
+                            {#    if (unique_bssids.includes(room.bssids_data[j].bssid)) {#}
                                     {#console.log(room.bssids_data[j].bssid)#}
-                                    room_bssids.push(room.bssids_data[j])
-                                }
-                                // if (room.bssids_data[j].freq > 0.3) {
-                                //    room_bssids.push(room.bssids_data[j])
-                                // }
-                            }
-                            room_bssids.sort((a,b) => {
+                            {#        room_bssids.push(room.bssids_data[j])#}
+                                    {#console.log(room.bssids_data[j])#}
+                            {#    }#}
+                            {##}
+                            {#let final_bssids_of_room = room_bssids.map(bssid => {#}
+                            {#    return bssid.bssid;#}
+                            {#)#}
+
+                            {#for (let m=0; m<unique_bssids.length; m++) {#}
+                            {#    if (!final_bssids_of_room.includes(unique_bssids[m])) {#}
+                            {#        data = {};#}
+                            {#        data.bssid = unique_bssids[m];#}
+                            {#        data.ssid = unique_bssids[m];#}
+                            {#        data.vals = [];#}
+                            {#        data.points_appeared = [];#}
+                            {#        data.freq = 0;#}
+                            {#        data.mean = -100;#}
+                            {#        data.var = 0;#}
+                            {#        room_bssids.push(data);#}
+                            {#    }#}
+                            {##}
+
+                            console.log(room.room, room.bssids_data);
+                            {#room_stats[i].bssids_data = room_bssids;#}
+                            room.bssids_data.sort((a,b) => {
                                 if (a.freq > b.freq) return -1;
                                 if (b.freq > a.freq) return 1;
                                 return 0;
-                            })
-                            console.log(room, room_bssids);
-
+                            });
+                            room_bssids = room.bssids_data;
                             // make a chart for each room with all the statistics of the bssids found
                             const room_resultsDiv = document.getElementById('room_results');
                             const resultsDiv = document.createElement("div");
@@ -169,13 +187,79 @@
                             this.makeTable('room_' + room_name, room_name, room_bssids, num_sps);
                         }
 
+
+                        // find variance of Bssid frequencies
+                        //console.log(room_stats)
+                        //unique_bssids = unique_bssids.map(bssid => {
+                        //    return {
+                        //        bssid: bssid,
+                        //        ssid: '',
+                        //        freqVar: 0
+                        //    }
+                        //})
+                        //for (let k=0; k<unique_bssids.length; k++) {
+                        //    {#console.log("### BSSID:", unique_bssids[k].bssid);#}
+                        //    let room_freqs = [];
+                        //    for (let i=0; i<room_stats.length; i++) {
+                        //        let room = room_stats[i].room;
+                        //        {#console.log("- Room:", room)#}
+                        //        let room_data = room_stats[i].bssids_data;
+                        //        for (let m=0; m<room_data.length; m++) {
+                        //            if (room_data[m].bssid == unique_bssids[k].bssid) {
+                        //                unique_bssids[k].ssid = room_data[m].ssid;
+                        //                {#console.log(room_data[m].bssid, room_data[m].freq);#}
+                        //                room_freqs.push(room_data[m].freq * 100);
+                        //                break;
+                        //            }
+                        //        }
+                        //    }
+                        //    let freqVar = this.findVariance(room_freqs);
+                        //    {#console.log("Var across rooms:", freqVar);#}
+                        //    unique_bssids[k].freqVar = freqVar
+                        //}
+                        //console.log(unique_bssids)
+                        //for (let i=0;i<room_stats.length; i++){
+                        //    let room = room_stats[i].room;
+                        //    console.log("----", room);
+                        //    let sum = 0;
+                        //    let room_data = room_stats[i].bssids_data;
+                        //    for (let m=0; m<room_data.length; m++) {
+                        //        {#console.log(room_data[m].bssid, room_data[m].freq)#}
+                        //        let bssid_freq = room_data[m].freq;
+                        //        let freqVar = 0;
+                        //        // find freqVar for this bssid
+                        //        for (let k=0; k<unique_bssids.length; k++) {
+                        //            if (unique_bssids[k].bssid == room_data[m].bssid) {
+                        //                freqVar = unique_bssids[k].freqVar;
+                        //            }
+                        //        }
+                        //        sum += freqVar*freqVar * bssid_freq;
+                        //    }
+                        //    console.log("room coef:", sum);
+                        //}
+
                     } catch(e) {
                         console.log(e)
                     }
                 },
+                findVariance(arr = []) {
+                       if(!arr.length){
+                          return 0;
+                       };
+                       const sum = arr.reduce((acc, val) => acc + val);
+                       const { length: num } = arr;
+                       const median = sum / num;
+                       let variance = 0;
+                       arr.forEach(num => {
+                          variance += ((num - median) * (num - median));
+                       });
+                       variance /= num;
+                       return variance;
+                },
+
                 makeTable(newDivId, room_name, room_bssids, num_sps) {
                     const room_div = document.getElementById(newDivId);
-                    console.log(room_div);
+                    {#console.log(room_div);#}
                     let table = document.createElement('table');
                     table.classList.add('table');
                     let thead = document.createElement('thead');
