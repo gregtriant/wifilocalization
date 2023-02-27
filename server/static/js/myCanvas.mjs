@@ -297,23 +297,21 @@ export class FloorPlan {
     changeSelectedBSSID(bssid) {
         if (!bssid) return;
         this.selectedBSSID = bssid;
-        // console.log("selected", bssid);
+        console.log("selected", bssid);
         // console.log("Radio map:", this.radioMap);
-
+        console.log("values of selected BSSID", this.radioMap[this.selectedBSSID]);
         this.drawRadioMapForBSSID();
     }
 
     drawRadioMapForBSSID() {
         if (!this.radioMap || !this.selectedBSSID) return;
         let numberOfPoints = Object.keys(this.radioMap['pointX']).length;
-
         for (let i=0; i<numberOfPoints; i++) {
             let rssi_value = this.radioMap[this.selectedBSSID][i];
             let level = this.dbmToQuality(rssi_value) / 100; // from 0 to 1
             let x = this.radioMap['pointX'][i];
             let y = this.radioMap['pointY'][i];
             let point = this.scalePoint({x,y}, this.canvas.width, this.canvas.height)
-
 
             // draw the rect
             let width = 25;
@@ -326,7 +324,6 @@ export class FloorPlan {
             if (level == 0) {
                 red=0;
                 red=0;
-
             }
             this.ctx.fillStyle = `rgb(${red},${green},${blue})`;
             this.ctx.rect(point.x-width/2, point.y - width/2, width, width);

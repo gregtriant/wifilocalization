@@ -138,45 +138,109 @@ class RadioMap:
         del points_from_database
         print('Found ', len(self.signal_points), 'different points')
 
-        # Find Room_stats
-        for room_stat in self.stats_for_rooms:
-            # if room_stat.name == "office":
-            #     break
-            total_scans = 0
-            for sp_index, sp in enumerate(room_stat.signal_points):
-                for scan_index in range(self.SCAN_START, self.SCAN_END):
-                    scan = sp.scans[scan_index]
-                    total_scans += 1
-                    for net in scan:
-                        bssid_name = net["BSSID"]
-                        ssid = net["SSID"]
-                        val = net["level"]
+        self.find_unique_bssids()
 
+        # Find Room stats
+        num_of_scans = self.SCAN_END - self.SCAN_START
+        print("Number of Scans on each point:", num_of_scans)
+        for room_stat in self.stats_for_rooms:
+            # if room_stat.name == "room1":
+            #     break
+            # print(room_stat.name)
+
+            # Keep only the BSSIDs that appear with a freq >=0.7 at least one point of the room
+            bssids_to_keep = []
+            total_scans = self.SCAN_END - self.SCAN_START
+            total_room_scans = len(room_stat.signal_points) * total_scans
+            for sp_index, sp in enumerate(room_stat.signal_points):
+                for bssid in self.unique_bssids_of_floor_plan_dict: # find the appearance frequency of this bssid at this point
+                    bssid_point_freq = 0
+                    for scan_index in range(self.SCAN_START, self.SCAN_END):
+                        scan = sp.scans[scan_index]
+                        for net in scan:
+                            bssid_name = net["BSSID"]
+                            if bssid_name == bssid["bssid"]:
+                                bssid_point_freq += 1
+                                break
+                    bssid_point_freq = bssid_point_freq / total_scans
+                    if bssid_point_freq >= 0.7:
                         found = False
-                        for bssid in room_stat.bssids:
-                            if bssid.bssid == bssid_name:
+                        for check_bssid in bssids_to_keep:
+                            if check_bssid.bssid == bssid["bssid"]:
+                                check_bssid.points_appeared.append(sp_index)
                                 found = True
-                                bssid.addVal(val)
-                                if sp_index not in bssid.points_appeared:
-                                    bssid.points_appeared.append(sp_index) # keep track on which points it appeared
                                 break
                         if not found:
-                            new_bssid = BSSID(bssid_name, ssid)
-                            new_bssid.addVal(val)
+                            new_bssid = BSSID(bssid["bssid"], bssid["ssid"])
                             new_bssid.points_appeared.append(sp_index)
-                            room_stat.addBssid(new_bssid)
+                            bssids_to_keep.append(new_bssid)
 
-            for bssid in room_stat.bssids:
-                freq = len(bssid.vals)/total_scans
-                bssid.freq = freq
-                bssid.calcMean()
+            # Get values of each bssid at the points that appeared more than 70% of the time
+            for bssid in bssids_to_keep:
+                # print(bssid.bssidData())
+                for sp_index, sp in enumerate(room_stat.signal_points):
+                    if sp_index in bssid.points_appeared:
+                        # print(sp_index, " ---- ")
+                        for scan_index in range(self.SCAN_START, self.SCAN_END):
+                            scan = sp.scans[scan_index]
+                            for net in scan:
+                                if net["BSSID"] == bssid.bssid:
+                                    bssid.vals.append(net["level"])
+                                    bssid.freq += 1
+                                    break
+
+                # now we have found all the bssid vals in the room
+                # print(total_scans)
+                bssid.freq = bssid.freq / total_room_scans
                 bssid.calcVar()
+                bssid.calcMean()
                 # print(bssid.bssidData())
 
+            print(room_stat.name, "sps:", len(room_stat.signal_points), "bssids_to_keep:", len(bssids_to_keep))
+            room_stat.bssids = bssids_to_keep
+
+            # total_scans = 0
+            # for sp_index, sp in enumerate(room_stat.signal_points):
+            #     for scan_index in range(self.SCAN_START, self.SCAN_END):
+            #         scan = sp.scans[scan_index]
+            #         total_scans += 1
+            #         for net in scan:
+            #             bssid_name = net["BSSID"]
+            #             ssid = net["SSID"]
+            #             val = net["level"]
+            #
+            #             if bssid_name not in bssids_to_keep:
+            #                 continue
+            #
+            #             found = False
+            #             for bssid in room_stat.bssids:
+            #                 if bssid.bssid == bssid_name:
+            #                     found = True
+            #                     bssid.addVal(val)
+            #                     if sp_index not in bssid.points_appeared:
+            #                         bssid.points_appeared.append(sp_index)  # keep track on which points it appeared
+            #                     break
+            #             if not found:
+            #                 new_bssid = BSSID(bssid_name, ssid)
+            #                 new_bssid.addVal(val)
+            #                 new_bssid.points_appeared.append(sp_index)
+            #                 room_stat.addBssid(new_bssid)
+            #
+            # for bssid in room_stat.bssids:
+            #     freq = len(bssid.vals) / total_scans  # this is the room freq
+            #     bssid.freq = freq
+            #     bssid.calcMean()  # room mean
+            #     bssid.calcVar()  # room Var
+            #
+            #
+            # # keep only the bssids that are good for that room!
+            # new_bssids = []
+            # for bssid in room_stat.bssids:
+            #     if bssid.bssid in bssids_to_keep:
+            #         new_bssids.append(bssid)
+
+            # room_stat.bssids = new_bssids
             # print(room_stat.name, "sps:", len(room_stat.signal_points), "bssids:", len(room_stat.bssids))
-
-
-
 
 
     def add_scan_to_radio_map(self, x, y, networks): # this function exists so that we dont have to reconstuct the radio
@@ -221,7 +285,7 @@ class RadioMap:
                 break
 
     def make_radio_map(self):
-        if (self.TAKE_AVERAGE == False):
+        if not self.TAKE_AVERAGE:
             self.make_radio_map2()
             return
         for index, signal_point in enumerate(self.signal_points): # all 129 signal points
@@ -264,12 +328,14 @@ class RadioMap:
                     # "std:", "{:6.4f}".format(std), "mode:", "{:6.4f}".format(mode), signal_strengths)
                     signal_point_fingerprint.append((bssid, freq, mean, std, mode))
 
+
             # sort the fingerprint
             signal_point.set_fingerprint(sorted(signal_point_fingerprint, key=lambda x: -x[2]))  # 0:bssid, 1:freq, 2:mean, 3:std, 4:mode # the minus sorts in descending order
-            # print("Fingerpint kept:", len(signal_point.fingerprint))
+            # print(signal_point.room)
+            # if signal_point.room == 'corr2':
+            #     print("Fingerpint kept:", signal_point.fingerprint)
+            # print("Fingerpint kept:", signal_point.fingerprint)
             # print("--------- ", index, "FINGERPRINT:", signal_point.fingerprint)
-
-        self.find_unique_bssids()
 
         # at each point, if a bssid is not found, we place the lowest level as its value
         for index, signal_point in enumerate(self.signal_points):
@@ -310,7 +376,7 @@ class RadioMap:
                 # print(new_df_row)
                 df = pd.concat([df, pd.DataFrame.from_dict(new_df_row)], ignore_index=True, axis=0)
 
-            # print(df.head())
+            print(df)
             json_data = df.to_json()
             with open('df_' + str(1) + '.json', 'w') as fout:
                 json.dump(json_data, fout)
@@ -330,7 +396,6 @@ class RadioMap:
 
     def make_radio_map2(self):
         print("Using all scans for the radio map...")
-        self.find_unique_bssids()
         if self.MAKE_NEW_DF:
             # find unique bssids of floor plan
             final_df = pd.DataFrame()
@@ -383,8 +448,7 @@ class RadioMap:
                         new_bssid = {
                             'bssid': network['BSSID'],
                             'ssid': network['SSID'],
-                            'freq': 1,
-                            'values': []
+                            'freq': 1
                         }
                         unique_bssids_of_point.append(new_bssid)
 

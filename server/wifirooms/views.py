@@ -1,4 +1,6 @@
 import math
+import plotly.express as px
+import pandas as pd
 
 from django.shortcuts import render, get_object_or_404
 from .models import FloorPlan, Room, SignalPoint, Route
@@ -43,7 +45,7 @@ for floor_plan in floor_plans:
     for room in data:
         rooms.append(room['fields'])
     rm = None
-    rm = RadioMap(points, rooms, limit_scans='all', take_average=True, make_new_df=True)
+    rm = RadioMap(points, rooms, limit_scans='second', take_average=True, make_new_df=True)
     rm.make_radio_map()
     end = time.time()
     rm_data = {
@@ -237,10 +239,11 @@ def localize_test_all(request, floor_plan_id):
     # print(test_pts)
 
     response_data = []
+    df_cdf = pd.DataFrame()
     for i, algo in enumerate(localizer.names_of_classifiers): # 8-10 classifiers
         # send progress to client
-        # if i != 0:
-        #     break
+        # if i >= 3:
+        #     continue
 
         algo_data = {
             "algorithm": algo,
@@ -331,6 +334,9 @@ def localize_test_all(request, floor_plan_id):
         # print(human1_avg_dist_of_points)
         # print(human2_avg_dist_of_points)
         # print(avg_dist_of_points)
+        # df = px.data.tips()
+        df_cdf.insert(0, algo, algo_data["avg_dist_of_points"])
+        # print(df_cdf)
 
         room_results = []
         for room_result in all_results.room_results:
@@ -350,6 +356,15 @@ def localize_test_all(request, floor_plan_id):
         algo_data["room_results"] = room_results
 
         response_data.append(algo_data)
+
+    # make CDF plot
+    fig = px.ecdf(df_cdf, width=500, height=700)
+    fig.update_layout(
+        title={
+            'text': algo,
+            'x': 0.5,
+        })
+    fig.show()
 
     with open('results_' + str(floor_plan_id) + '.json', 'w') as outfile:
         json.dump(json.dumps(response_data), outfile)

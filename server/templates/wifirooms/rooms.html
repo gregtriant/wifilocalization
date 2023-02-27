@@ -165,7 +165,7 @@
                     </div>
 {#                    <br>#}
                     <div class="pointsContainer">
-                        <div v-for="(bssid, index) in unique_bssids" :key="index" class="pointInfo" @click="changeSelectedBSSID(bssid.bssid, index)" :class="bssid.bssid==selected_BSSID? 'point-info-selected': ''">
+                        <div v-for="(bssid, index) in unique_bssids" :key="index" class="pointInfo" @click="changeSelectedBSSID(bssid.bssid)" :class="bssid.bssid==selected_BSSID? 'point-info-selected': ''">
                             [[ index ]]. <span v-if="showSSIDs">[[ bssid.ssid ]] <br> </span>[[ bssid.bssid ]]
                         </div>
 {#                        <div v-if="floorPlan.pins && floorPlan.pins.length==0">No bssids found.</div>#}
@@ -320,14 +320,14 @@
                 newRoomName: '',
                 newRoomMessage: '',
             },
-            mounted() {
+            async mounted() {
                 console.log("Rooms: ", this.rooms);
                 console.log("floor_plan_id: ", this.floor_plan_id);
                 console.log("floor_plan_img: ", this.floor_plan_img);
 
                 this.getFloorPlan();  // getting rooms and routes
                 this.getPoints();     // getting signal points and number of scans of radio map
-                this.getRadioMap();   // getting radio map dataframe
+                await this.getRadioMap();   // getting radio map dataframe
                 this.getBssids();     // getting unique bssids of radio map
                 this.getTestPoints(); // getting test points
                 this.getAlgorithms();
@@ -347,7 +347,8 @@
                     this.floorPlan = new FloorPlan(canvas, this.img, this.imgPin, this.imgPinGreen, this.imgPinYellow)
                     this.floorPlan.setRooms(this.rooms);
                     this.floorPlan.setPins(this.pins);
-                    this.floorPlan.routes = this.routes;
+                    this.floorPlan.setRoutes(this.routes);
+                    this.floorPlan.radioMap = this.radioMap;
 
                     document.getElementById('TAB_Testing').click(); // change active tab
 
@@ -512,8 +513,8 @@
                         this.routes = this.routes.map(route => {
                             return JSON.parse(route.points)
                         })
-                        this.floorPlan.setRooms(this.rooms);
-                        this.floorPlan.setRoutes(this.routes);
+                        {#this.floorPlan.setRooms(this.rooms);#}
+                        {#this.floorPlan.setRoutes(this.routes);#}
                     })
                     .catch(err => {console.log(err)})
                 },
@@ -524,7 +525,8 @@
                         .then(res => {
                             {#console.log(res.data)#}
                             this.pins = res.data;
-                            this.floorPlan.setPins(this.pins);
+                            {#console.log(this.floorPlan)#}
+                            {#this.floorPlan.setPins(this.pins);#}
                             {#this.floorPlan.radioMap = this.radioMap;#}
                         })
                         .catch(err => {
@@ -532,17 +534,15 @@
                         })
                 },
 
-                getRadioMap() {
+                async getRadioMap() {
                     console.log("getting radio map...")
-                    axios.get("/"+this.floor_plan_id+"/radio_map/")
-                        .then(res => {
-                            {#console.log("Radio Map:", res.data)#}
-                            this.radioMap = res.data;
-                            this.floorPlan.radioMap = this.radioMap;
-                        })
-                        .catch(err => {
-                            console.log(err)
-                        })
+                    try {
+                        let res = await axios.get("/"+this.floor_plan_id+"/radio_map/");
+                        console.log(res.data);
+                        this.radioMap = res.data;
+                    } catch (e) {
+                        console.log(e);
+                    }
                 },
 
                 getBssids() {
@@ -551,7 +551,7 @@
                     .then(res => {
                         console.log(res.data)
                         this.unique_bssids = res.data
-                        this.changeSelectedBSSID(this.unique_bssids[0],0);
+                        this.changeSelectedBSSID(this.unique_bssids[0].bssid);
                     })
                     .catch(err => {
                         console.log(err)
@@ -617,8 +617,9 @@
                     this.floorPlan.changeSelectedTestPoint(test_point, point_preds, rooms);
                 },
 
-                changeSelectedBSSID(bssid, index) {
-                    this.floorPlan.changeSelectedBSSID(bssid);
+                changeSelectedBSSID(bssid) {
+                    {#console.log(bssid)#}
+                    if (this.floorPlan) this.floorPlan.changeSelectedBSSID(bssid);
                     this.selected_BSSID = bssid;
                 },
 

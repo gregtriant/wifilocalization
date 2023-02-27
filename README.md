@@ -12,6 +12,7 @@ Make sure that python is in your windows Path
 4) pip install channels-redis # if you want redis in windows you need to install it on WSL ubuntu
 5) pip install django-cors-headers
 6) pip install requests
+7) pip install plotly==5.13.1 # for plotting
 
 
 If virtual env has authorization error type in powershell:

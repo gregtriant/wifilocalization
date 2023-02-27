@@ -15,11 +15,11 @@ class Localization:
         "knn",
         "wknn",
         "linear_svm",
-        "svm",
+        # "svm",
         "decision_tree",
         "random_forest",
         "MLP",
-        "adaboost",
+        # "adaboost",
         "naive_bayes",
     ]
 
@@ -27,11 +27,11 @@ class Localization:
         KNeighborsClassifier(n_neighbors=3),
         KNeighborsClassifier(n_neighbors=5, weights='distance'),
         SVC(kernel="linear", C=0.025),
-        SVC(gamma=2, C=1),
-        DecisionTreeClassifier(max_depth=5),
-        RandomForestClassifier(max_depth=5, n_estimators=10, max_features=1),
+        # SVC(gamma=10, C=5),
+        DecisionTreeClassifier(max_depth=10),
+        RandomForestClassifier(max_depth=10, n_estimators=10, max_features=1),
         MLPClassifier(alpha=1, max_iter=3000),
-        AdaBoostClassifier(),
+        # AdaBoostClassifier(),
         GaussianNB(),
     ]
 
@@ -39,11 +39,11 @@ class Localization:
         KNeighborsClassifier(n_neighbors=3),
         KNeighborsClassifier(n_neighbors=3, weights='distance'),
         SVC(kernel="linear", C=0.025),
-        SVC(gamma=2, C=1),
+        # SVC(gamma=2, C=1),
         DecisionTreeClassifier(max_depth=5),
         RandomForestClassifier(max_depth=5, n_estimators=10, max_features=1),
         MLPClassifier(alpha=1, max_iter=2000),
-        AdaBoostClassifier(),
+        # AdaBoostClassifier(),
         GaussianNB(),
     ]
 
